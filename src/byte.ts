@@ -1,0 +1,217 @@
+import { decodeRune, encodeRune, RuneError, RuneSelf, UTFMax, validRune } from './utf8'
+
+export const bytes = (s: string) => {
+  return new TextEncoder().encode(s)
+}
+
+export const byte = (s: string) => bytes(s)[0]
+
+export const decodeBytes = (b: Uint8Array) => new TextDecoder().decode(b)
+
+export const appendBytesArray = (a: Uint8Array, b: Uint8Array) => {
+  const c = new Uint8Array(a.length + b.length)
+  c.set(a)
+  c.set(b, a.length)
+  return c
+}
+
+// indexFunc interprets s as a sequence of UTF-8-encoded code points.
+// It returns the byte index in s of the first Unicode
+// code point satisfying f(c), or -1 if none do.
+export const indexFunc = (s: Uint8Array, f: (r: number) => boolean) => {
+  return _indexFunc(s, f, true)
+}
+
+// indexFunc is the same as IndexFunc except that if
+// truth==false, the sense of the predicate function is
+// inverted.
+const _indexFunc = (s: Uint8Array, f: (r: number) => boolean, truth: boolean) => {
+  let start = 0
+  while (start < s.length) {
+    let wid = 1
+    let r = s[start]
+    if (r >= RuneSelf) {
+      const [_r, _wid] = decodeRune(s.slice(start))
+      r = _r
+      wid = _wid
+    }
+    if (f(r) === truth) {
+      return start
+    }
+    start += wid
+  }
+  return -1
+}
+
+// IndexRune interprets s as a sequence of UTF-8-encoded code points.
+// It returns the byte index of the first occurrence in s of the given rune.
+// It returns -1 if rune is not present in s.
+// If r is utf8.RuneError, it returns the first instance of any
+// invalid UTF-8 byte sequence.
+export const indexRune = (s: Uint8Array, r: number): number => {
+  if (0 <= r && r < RuneSelf) {
+    return s.indexOf(r)
+  }
+  if (r === RuneError) {
+    let i = 0
+    while (i < s.length) {
+      const [r1, n] = decodeRune(s.slice(i))
+      if (r1 === RuneError) {
+        return i
+      }
+      i += n
+    }
+    return -1
+  }
+  if (!validRune(r)) return -1
+
+  const b = new Uint8Array(UTFMax)
+  const n = encodeRune(b.slice(0), r)
+  return index(s, b.slice(0, n))
+}
+
+// TrimLeftFunc treats s as UTF-8-encoded bytes and returns a subslice of s by slicing off
+// all leading UTF-8-encoded code points c that satisfy f(c).
+export const trimLeftFunc = (s: Uint8Array, f: (r: number) => boolean) => {
+  const i = _indexFunc(s, f, false)
+  if (i === -1) {
+    return new Uint8Array()
+  }
+  return s.slice(i)
+}
+
+export const equal = (a: Uint8Array, b: Uint8Array) => {
+  return a.length === b.length && a.every((elem, index) => elem === b[index])
+}
+
+const MaxBruteForce = 64
+
+export const cutover = (n: number): number => {
+  // 1 error per 8 characters, plus a few slop to start.
+  return (n + 16) / 8
+}
+
+// PrimeRK is the prime base used in Rabin-Karp algorithm.
+const PrimeRK = 16777619
+
+// HashStrBytes returns the hash and the appropriate multiplicative
+// factor for use in Rabin-Karp algorithm.
+export const hashStrBytes = (sep: Uint8Array): [number, number] => {
+  let hash = 0
+  for (let i = 0; i < sep.length; i++) {
+    hash = hash * PrimeRK + sep[i]
+  }
+  let pow = 1
+  let sq = PrimeRK
+  for (let i = sep.length; i > 0; i >>= 1) {
+    if ((i & 1) !== 0) {
+      pow *= sq
+    }
+    sq *= sq
+  }
+  return [hash, pow]
+}
+
+// IndexRabinKarpBytes uses the Rabin-Karp search algorithm to return the index of the
+// first occurence of substr in s, or -1 if not present.
+export const indexRabinKarpBytes = (s: Uint8Array, sep: Uint8Array): number => {
+  // Rabin-Karp search
+  const [hashsep, pow] = hashStrBytes(sep)
+  const n = sep.length
+  let h = 0
+  for (let i = 0; i < n; i++) {
+    h = h * PrimeRK + s[i]
+  }
+  if (h == hashsep && equal(s.slice(0, n), sep)) {
+    return 0
+  }
+  let i = n
+  while (i < s.length) {
+    h *= PrimeRK
+    h += s[i]
+    h -= pow * s[i - n]
+    i++
+    if (h == hashsep && equal(s.slice(i - n, i), sep)) {
+      return i - n
+    }
+  }
+  return -1
+}
+
+// Index returns the index of the first instance of sep in s, or -1 if sep is not present in s.
+export const index = (s: Uint8Array, sep: Uint8Array): number => {
+  const n = sep.length
+  if (n == 0) {
+    return 0
+  }
+  if (n == 1) {
+    return s.indexOf(sep[0])
+  }
+  if (n == s.length) {
+    if (equal(sep, s)) {
+      return 0
+    }
+    return -1
+  }
+  if (n > s.length) {
+    return -1
+  }
+  if (n <= 63) {
+    // Use brute force when s and sep both are small
+    const c0 = sep[0]
+    const c1 = sep[1]
+    let i = 0
+    const t = s.length - n + 1
+    let fails = 0
+    while (i < t) {
+      if (s[i] != c0) {
+        const o = s.slice(i + 1, t).indexOf(c0)
+        if (o < 0) {
+          return -1
+        }
+        i += o + 1
+      }
+      if (s[i + 1] == c1 && equal(s.slice(i, i + n), sep)) {
+        return i
+      }
+      fails++
+      i++
+    }
+    return -1
+  }
+  const c0 = sep[0]
+  const c1 = sep[1]
+  let i = 0
+  let fails = 0
+  const t = s.length - n + 1
+  while (i < t) {
+    if (s[i] !== c0) {
+      const o = s.slice(i + 1, t).indexOf(c0)
+      if (o < 0) {
+        break
+      }
+      i += o + 1
+    }
+    if (s[i + 1] == c1 && equal(s.slice(i, i + n), sep)) {
+      return i
+    }
+    i++
+    fails++
+    if (fails >= (4 + i) >> 4 && i < t) {
+      // Give up on IndexByte, it isn't skipping ahead
+      // far enough to be better than Rabin-Karp.
+      // Experiments (using IndexPeriodic) suggest
+      // the cutover is about 16 byte skips.
+      // TODO: if large prefixes of sep are matching
+      // we should cutover at even larger average skips,
+      // because Equal becomes that much more expensive.
+      // This code does not take that effect into account.
+      const j = indexRabinKarpBytes(s.slice(i), sep)
+      if (j < 0) {
+        return -1
+      }
+      return i + j
+    }
+  }
+  return -1
+}
