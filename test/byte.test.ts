@@ -5,7 +5,8 @@ import {
   trimRightFunc,
   indexFunc,
   lastIndexFunc,
-  indexRune
+  indexRune,
+  index
 } from '../src/byte'
 import * as unicode from '../src/unicode'
 import { RuneError, MaxRune } from '../src/utf8'
@@ -268,6 +269,54 @@ describe('byte package', () => {
         const haystack = new TextEncoder().encode('test世界')
         expect(indexRune(haystack, 's'.charCodeAt(0))).toEqual(2)
         expect(indexRune(haystack, '世'.charCodeAt(0))).toEqual(4)
+      }
+    })
+  })
+
+  describe('index', () => {
+    const indexTests = [
+      { a: '', b: '', i: 0 },
+      { a: '', b: 'a', i: -1 },
+      { a: '', b: 'foo', i: -1 },
+      { a: 'fo', b: 'foo', i: -1 },
+      { a: 'foo', b: 'baz', i: -1 },
+      { a: 'foo', b: 'foo', i: 0 },
+      { a: 'oofofoofooo', b: 'f', i: 2 },
+      { a: 'oofofoofooo', b: 'foo', i: 4 },
+      { a: 'barfoobarfoo', b: 'foo', i: 3 },
+      { a: 'foo', b: '', i: 0 },
+      { a: 'foo', b: 'o', i: 1 },
+      { a: 'abcABCabc', b: 'A', i: 3 },
+      // cases with one byte strings - test IndexByte and special case in Index()
+      { a: '', b: 'a', i: -1 },
+      { a: 'x', b: 'a', i: -1 },
+      { a: 'x', b: 'x', i: 0 },
+      { a: 'abc', b: 'a', i: 0 },
+      { a: 'abc', b: 'b', i: 1 },
+      { a: 'abc', b: 'c', i: 2 },
+      { a: 'abc', b: 'x', i: -1 },
+      { a: 'barfoobarfooyyyzzzyyyzzzyyyzzzyyyxxxzzzyyy', b: 'x', i: 33 },
+      { a: 'foofyfoobarfoobar', b: 'y', i: 4 },
+      { a: 'oooooooooooooooooooooo', b: 'r', i: -1 },
+      { a: 'oxoxoxoxoxoxoxoxoxoxoxoy', b: 'oy', i: 22 },
+      { a: 'oxoxoxoxoxoxoxoxoxoxoxox', b: 'oy', i: -1 },
+      // test fallback to Rabin-Karp.
+      {
+        a: '000000000000000000000000000000000000000000000000000000000000000000000001',
+        b: '0000000000000000000000000000000000000000000000000000000000000000001',
+        i: 5
+      }
+    ]
+    it('should work', () => {
+      for (let test of indexTests) {
+        const a = new TextEncoder().encode(test.a)
+        const b = new TextEncoder().encode(test.b)
+        const actual = index(a, b)
+        if (actual !== test.i)
+          throw new Error(
+            `actual: ${actual}, i: ${test.i}, sa: ${test.a}, sb: ${test.b}, a: ${a}, b: ${b}`
+          )
+        expect(actual).toEqual(test.i)
       }
     })
   })

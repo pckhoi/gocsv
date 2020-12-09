@@ -151,52 +151,68 @@ export const cutover = (n: number): number => {
   return (n + 16) / 8
 }
 
-// PrimeRK is the prime base used in Rabin-Karp algorithm.
-const PrimeRK = 16777619
+// // PrimeRK is the prime base used in Rabin-Karp algorithm.
+// const PrimeRK = 16777619
+// const MaxUint32 = 4294967295
 
-// HashStrBytes returns the hash and the appropriate multiplicative
-// factor for use in Rabin-Karp algorithm.
-export const hashStrBytes = (sep: Uint8Array): [number, number] => {
-  let hash = 0
-  for (let i = 0; i < sep.length; i++) {
-    hash = hash * PrimeRK + sep[i]
-  }
-  let pow = 1
-  let sq = PrimeRK
-  for (let i = sep.length; i > 0; i >>= 1) {
-    if ((i & 1) !== 0) {
-      pow *= sq
-    }
-    sq *= sq
-  }
-  return [hash, pow]
-}
+// // HashStrBytes returns the hash and the appropriate multiplicative
+// // factor for use in Rabin-Karp algorithm.
+// export const hashStrBytes = (sep: Uint8Array): [number, number] => {
+//   let hash = 0
+//   for (let i = 0; i < sep.length; i++) {
+//     const res = hash * PrimeRK + sep[i]
+//     if (res > MaxUint32) {
+//       hash = res >>> 0
+//     } else {
+//       hash = res
+//     }
+//   }
+//   let pow = 1
+//   let sq = PrimeRK
+//   for (let i = sep.length; i > 0; i >>= 1) {
+//     if ((i & 1) !== 0) {
+//       if (pow * sq === 0 || (pow * sq) >>> 0 === 0) {
+//         throw new Error(`pow: ${pow}, sq: ${sq}`)
+//       }
+//       pow *= sq
+//       if (pow > MaxUint32) {
+//         pow = pow >>> 0
+//       }
+//     }
+//     if (sq * sq === 0 || (sq * sq) >>> 0 === 0) throw new Error(`sq: ${sq}`)
+//     sq *= sq
+//     if (sq > MaxUint32) {
+//       sq = sq >>> 0
+//     }
+//   }
+//   return [hash, pow]
+// }
 
-// IndexRabinKarpBytes uses the Rabin-Karp search algorithm to return the index of the
-// first occurence of substr in s, or -1 if not present.
-export const indexRabinKarpBytes = (s: Uint8Array, sep: Uint8Array): number => {
-  // Rabin-Karp search
-  const [hashsep, pow] = hashStrBytes(sep)
-  const n = sep.length
-  let h = 0
-  for (let i = 0; i < n; i++) {
-    h = h * PrimeRK + s[i]
-  }
-  if (h == hashsep && equal(s.slice(0, n), sep)) {
-    return 0
-  }
-  let i = n
-  while (i < s.length) {
-    h *= PrimeRK
-    h += s[i]
-    h -= pow * s[i - n]
-    i++
-    if (h == hashsep && equal(s.slice(i - n, i), sep)) {
-      return i - n
-    }
-  }
-  return -1
-}
+// // IndexRabinKarpBytes uses the Rabin-Karp search algorithm to return the index of the
+// // first occurence of substr in s, or -1 if not present.
+// export const indexRabinKarpBytes = (s: Uint8Array, sep: Uint8Array): number => {
+//   // Rabin-Karp search
+//   const [hashsep, pow] = hashStrBytes(sep)
+//   const n = sep.length
+//   let h = 0
+//   for (let i = 0; i < n; i++) {
+//     h = h * PrimeRK + s[i]
+//   }
+//   if (h == hashsep && equal(s.slice(0, n), sep)) {
+//     return 0
+//   }
+//   let i = n
+//   while (i < s.length) {
+//     h *= PrimeRK
+//     h += s[i]
+//     h -= pow * s[i - n]
+//     i++
+//     if (h == hashsep && equal(s.slice(i - n, i), sep)) {
+//       return i - n
+//     }
+//   }
+//   return -1
+// }
 
 // Index returns the index of the first instance of sep in s, or -1 if sep is not present in s.
 export const index = (s: Uint8Array, sep: Uint8Array): number => {
@@ -257,21 +273,21 @@ export const index = (s: Uint8Array, sep: Uint8Array): number => {
     }
     i++
     fails++
-    if (fails >= (4 + i) >> 4 && i < t) {
-      // Give up on IndexByte, it isn't skipping ahead
-      // far enough to be better than Rabin-Karp.
-      // Experiments (using IndexPeriodic) suggest
-      // the cutover is about 16 byte skips.
-      // TODO: if large prefixes of sep are matching
-      // we should cutover at even larger average skips,
-      // because Equal becomes that much more expensive.
-      // This code does not take that effect into account.
-      const j = indexRabinKarpBytes(s.slice(i), sep)
-      if (j < 0) {
-        return -1
-      }
-      return i + j
-    }
+    // if (fails >= (4 + i) >> 4 && i < t) {
+    //   // Give up on IndexByte, it isn't skipping ahead
+    //   // far enough to be better than Rabin-Karp.
+    //   // Experiments (using IndexPeriodic) suggest
+    //   // the cutover is about 16 byte skips.
+    //   // TODO: if large prefixes of sep are matching
+    //   // we should cutover at even larger average skips,
+    //   // because Equal becomes that much more expensive.
+    //   // This code does not take that effect into account.
+    //   const j = indexRabinKarpBytes(s.slice(i), sep)
+    //   if (j < 0) {
+    //     return -1
+    //   }
+    //   return i + j
+    // }
   }
   return -1
 }
