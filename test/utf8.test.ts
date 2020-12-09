@@ -1,4 +1,5 @@
-import { encodeRune, decodeRune, RuneError, MaxRune, validRune } from '../src/utf8'
+import { encodeRune, decodeRune, RuneError, MaxRune, validRune, decodeLastRune } from '../src/utf8'
+import { bytes } from './test_utils'
 
 const utf8map: [number, string][] = [
   [0x0000, '\x00'],
@@ -35,22 +36,24 @@ const utf8map: [number, string][] = [
   [0xfffd, '\xef\xbf\xbd']
 ]
 
-const bytes = (str: string) => {
-  const b = new Uint8Array(str.length)
-  for (let i = 0; i < str.length; i++) {
-    b[i] = str.charCodeAt(i)
-  }
-  return b
-}
+const testStrings = [
+  '',
+  'abcd',
+  '☺☻☹',
+  '日a本b語ç日ð本Ê語þ日¥本¼語i日©',
+  '日a本b語ç日ð本Ê語þ日¥本¼語i日©日a本b語ç日ð本Ê語þ日¥本¼語i日©日a本b語ç日ð本Ê語þ日¥本¼語i日©',
+  '\x80\x80\x80\x80'
+]
 
 describe('utf8 package', () => {
   describe('encodeRune', () => {
     it('should work', () => {
       for (let [r, str] of utf8map) {
-        const b = new Uint8Array(str.length)
-        for (let i = 0; i < str.length; i++) {
-          b[i] = str.charCodeAt(i)
-        }
+        // const b = new Uint8Array(str.length)
+        // for (let i = 0; i < str.length; i++) {
+        //   b[i] = str.charCodeAt(i)
+        // }
+        const b = bytes(str)
         const buf = new Uint8Array(10)
         const n = encodeRune(buf, r)
         const b1 = buf.slice(0, n)
@@ -112,6 +115,41 @@ describe('utf8 package', () => {
     it('should work', () => {
       for (let tt of validrunetests) {
         expect(validRune(tt[0])).toEqual(tt[1])
+      }
+    })
+  })
+
+  describe('decodeLastRune', () => {
+    it('should work', () => {
+      for (let ts of testStrings) {
+        for (let m of utf8map) {
+          for (let s of [ts + m[1], m[1] + ts, ts + m[1] + ts]) {
+            type info = {
+              index: number
+              r: Uint8Array
+            }
+            const index: info[] = []
+            const b = bytes(s)
+            let si = 0
+            let j = 0
+            while (si < b.length) {
+              const [r1, size1] = decodeRune(b.slice(si))
+              index[j] = { index: si, r: b.slice(si, size1) }
+              j++
+              si += size1
+            }
+            j--
+            si = s.length
+            while (si > 0) {
+              const [r1, size1] = decodeLastRune(b.slice(0, si))
+              expect(b.slice(si - size1, size1)).toEqual(index[j].r)
+              si -= size1
+              expect(si).toEqual(index[j].index)
+              j--
+            }
+            expect(si).toEqual(0)
+          }
+        }
       }
     })
   })

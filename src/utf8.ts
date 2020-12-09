@@ -179,3 +179,52 @@ export const validRune = (r: number) => {
   if (surrogateMax < r && r <= MaxRune) return true
   return false
 }
+
+// RuneStart reports whether the byte could be the first byte of an encoded,
+// possibly invalid rune. Second and subsequent bytes always have the top two
+// bits set to 10.
+export const runeStart = (b: number): boolean => {
+  return (b & 0xc0) !== 0x80
+}
+
+// DecodeLastRune unpacks the last UTF-8 encoding in p and returns the rune and
+// its width in bytes. If p is empty it returns (RuneError, 0). Otherwise, if
+// the encoding is invalid, it returns (RuneError, 1). Both are impossible
+// results for correct, non-empty UTF-8.
+//
+// An encoding is invalid if it is incorrect UTF-8, encodes a rune that is
+// out of range, or is not the shortest possible UTF-8 encoding for the
+// value. No other validation is performed.
+export const decodeLastRune = (p: Uint8Array): [number, number] => {
+  const end = p.length
+  if (end === 0) {
+    return [RuneError, 0]
+  }
+  let start = end - 1
+  let r = p[start]
+  if (r < RuneSelf) {
+    return [r, 1]
+  }
+  // guard against O(n^2) behavior when traversing
+  // backwards through strings with long sequences of
+  // invalid UTF-8.
+  let lim = end - UTFMax
+  if (lim < 0) {
+    lim = 0
+  }
+  for (start--; start >= lim; start--) {
+    if (runeStart(p[start])) {
+      break
+    }
+  }
+  if (start < 0) {
+    start = 0
+  }
+  const res = decodeRune(p.slice(start, end))
+  r = res[0]
+  const size = res[1]
+  if (start + size != end) {
+    return [RuneError, 1]
+  }
+  return [r, size]
+}

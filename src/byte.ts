@@ -1,4 +1,12 @@
-import { decodeRune, encodeRune, RuneError, RuneSelf, UTFMax, validRune } from './utf8'
+import {
+  decodeLastRune,
+  decodeRune,
+  encodeRune,
+  RuneError,
+  RuneSelf,
+  UTFMax,
+  validRune
+} from './utf8'
 
 export const bytes = (s: string) => {
   return new TextEncoder().encode(s)
@@ -70,6 +78,34 @@ export const indexRune = (s: Uint8Array, r: number): number => {
   return index(s, b.slice(0, n))
 }
 
+// LastIndexFunc interprets s as a sequence of UTF-8-encoded code points.
+// It returns the byte index in s of the last Unicode
+// code point satisfying f(c), or -1 if none do.
+export const lastIndexFunc = (s: Uint8Array, f: (r: number) => boolean): number => {
+  return _lastIndexFunc(s, f, true)
+}
+
+// lastIndexFunc is the same as LastIndexFunc except that if
+// truth==false, the sense of the predicate function is
+// inverted.
+const _lastIndexFunc = (s: Uint8Array, f: (r: number) => boolean, truth: boolean) => {
+  let i = s.length
+  while (i > 0) {
+    let r = s[i - 1]
+    let size = 1
+    if (r >= RuneSelf) {
+      const res = decodeLastRune(s.slice(0, i))
+      r = res[0]
+      size = res[1]
+    }
+    i -= size
+    if (f(r) === truth) {
+      return i
+    }
+  }
+  return -1
+}
+
 // TrimLeftFunc treats s as UTF-8-encoded bytes and returns a subslice of s by slicing off
 // all leading UTF-8-encoded code points c that satisfy f(c).
 export const trimLeftFunc = (s: Uint8Array, f: (r: number) => boolean) => {
@@ -78,6 +114,25 @@ export const trimLeftFunc = (s: Uint8Array, f: (r: number) => boolean) => {
     return new Uint8Array()
   }
   return s.slice(i)
+}
+
+// TrimRightFunc returns a subslice of s by slicing off all trailing
+// UTF-8-encoded code points c that satisfy f(c).
+export const trimRightFunc = (s: Uint8Array, f: (r: number) => boolean) => {
+  let i = _lastIndexFunc(s, f, false)
+  if (i >= 0 && s[i] >= RuneSelf) {
+    const [_, wid] = decodeRune(s.slice(i))
+    i += wid
+  } else {
+    i++
+  }
+  return s.slice(0, i)
+}
+
+// TrimFunc returns a subslice of s by slicing off all leading and trailing
+// UTF-8-encoded code points c that satisfy f(c).
+export const trimFunc = (s: Uint8Array, f: (r: number) => boolean): Uint8Array => {
+  return trimRightFunc(trimLeftFunc(s, f), f)
 }
 
 export const equal = (a: Uint8Array, b: Uint8Array) => {
