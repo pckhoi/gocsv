@@ -58,23 +58,28 @@ const _indexFunc = (s: Uint8Array, f: (r: number) => boolean, truth: boolean) =>
 // invalid UTF-8 byte sequence.
 export const indexRune = (s: Uint8Array, r: number): number => {
   if (0 <= r && r < RuneSelf) {
+    // if (r === 65) throw new Error(`r: ${r}, s: ${s}, index: ${s.indexOf(r)}`)
     return s.indexOf(r)
   }
   if (r === RuneError) {
     let i = 0
+    let j = 0
     while (i < s.length) {
       const [r1, n] = decodeRune(s.slice(i))
       if (r1 === RuneError) {
-        return i
+        return j
       }
       i += n
+      j++
     }
     return -1
   }
+  // if (r === 65) throw new Error(`r: ${r}, valid: ${validRune(r)}`)
   if (!validRune(r)) return -1
 
   const b = new Uint8Array(UTFMax)
-  const n = encodeRune(b.slice(0), r)
+  const n = encodeRune(b, r)
+  // if (r === 65) throw new Error(`r: ${r}, b: ${b}, n: ${n}`)
   return index(s, b.slice(0, n))
 }
 
