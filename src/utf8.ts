@@ -228,3 +228,41 @@ export const decodeLastRune = (p: Uint8Array): [number, number] => {
   }
   return [r, size]
 }
+
+// RuneCount returns the number of runes in p. Erroneous and short
+// encodings are treated as single runes of width 1 byte.
+export const runeCount = (p: Uint8Array): number => {
+  const np = p.length
+  let n = 0
+  for (let i = 0; i < np; ) {
+    n++
+    const c = p[i]
+    if (c < RuneSelf) {
+      // ASCII fast path
+      i++
+      continue
+    }
+    const x = first[c]
+    if (x === xx) {
+      i++ // invalid.
+      continue
+    }
+    let size = Math.floor(x & 7)
+    if (i + size > np) {
+      i++ // Short or invalid.
+      continue
+    }
+    const accept = acceptRanges[x >> 4]
+    if (p[i + 1] < accept.lo || accept.hi < p[i + 1]) {
+      size = 1
+    } else if (size === 2) {
+    } else if (p[i + 2] < locb || hicb < p[i + 2]) {
+      size = 1
+    } else if (size === 3) {
+    } else if (p[i + 3] < locb || hicb < p[i + 3]) {
+      size = 1
+    }
+    i += size
+  }
+  return n
+}

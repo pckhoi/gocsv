@@ -1,5 +1,15 @@
-import { encodeRune, decodeRune, RuneError, MaxRune, validRune, decodeLastRune } from '../src/utf8'
+import {
+  encodeRune,
+  decodeRune,
+  RuneError,
+  MaxRune,
+  validRune,
+  decodeLastRune,
+  runeCount
+} from '../src/utf8'
 import { bytes } from './test_utils'
+
+const encoder = new TextEncoder()
 
 const utf8map: [number, string][] = [
   [0x0000, '\x00'],
@@ -150,6 +160,24 @@ describe('utf8 package', () => {
             expect(si).toEqual(0)
           }
         }
+      }
+    })
+  })
+
+  describe('runeCount', () => {
+    const runecounttests = [
+      { in: encoder.encode('abcd'), out: 4 },
+      { in: encoder.encode('☺☻☹'), out: 3 },
+      { in: encoder.encode('1,2,3,4'), out: 7 },
+      { in: new Uint8Array([0xe2, 0x00]), out: 2 },
+      { in: new Uint8Array([0xe2, 0x80]), out: 2 },
+      { in: new Uint8Array([97, 0xe2, 0x80]), out: 3 }
+    ]
+
+    it('should work', () => {
+      for (let tt of runecounttests) {
+        const out = runeCount(tt.in)
+        expect(out).toEqual(tt.out)
       }
     })
   })

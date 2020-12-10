@@ -12,7 +12,7 @@ export const bytes = (s: string) => {
   return new TextEncoder().encode(s)
 }
 
-export const byte = (s: string) => bytes(s)[0]
+export const byte = (s: string) => s.charCodeAt(0)
 
 export const decodeBytes = (b: Uint8Array) => new TextDecoder().decode(b)
 
@@ -290,4 +290,25 @@ export const index = (s: Uint8Array, sep: Uint8Array): number => {
     // }
   }
   return -1
+}
+
+export const bytesLength = (n: number) => {
+  if (!n) return 0
+  let l = 1
+  while (n >= 256) {
+    n = n >>> 8
+    l += 1
+  }
+  return l
+}
+
+export const bytesArray = (n: number) => {
+  if (!n) return new Uint8Array()
+  const a = []
+  a.unshift(n & 255)
+  while (n >= 256) {
+    n = n >>> 8
+    a.unshift(n & 255)
+  }
+  return new Uint8Array(a)
 }
