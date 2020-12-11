@@ -19,8 +19,10 @@ export default class BufferedReader {
   unreadData?: Uint8Array
   lastByte?: number // last byte read for UnreadByte; -1 means invalid
   lastRuneSize?: number // size of last rune read for UnreadRune; -1 means invalid
+  eof: boolean
 
   constructor(rd: ReadableStream, size: number = 4096) {
+    this.eof = false
     if (size < minReadBufferSize) {
       size = minReadBufferSize
     }
@@ -42,6 +44,7 @@ export default class BufferedReader {
     // Slide existing data to beginning.
     if (this.r > 0) {
       this.buf.copyWithin(0, this.r, this.w)
+      this.buf.fill(0, this.w - this.r)
       this.w -= this.r
       this.r = 0
     }
@@ -80,7 +83,7 @@ export default class BufferedReader {
       if (this.w + n >= this.buf.length) {
         this.buf.set(bArr.slice(0, this.buf.length - this.w), this.w)
         this.unreadData = bArr.slice(this.buf.length - this.w)
-        this.w += n
+        this.w = this.buf.length
         reader.releaseLock()
         return
       }
@@ -122,6 +125,7 @@ export default class BufferedReader {
         this.line = this.buf.slice(this.r, this.w)
         this.r = this.w
         if (e.message === 'EOF') {
+          this.eof = true
           break
         }
         throw e
@@ -146,15 +150,6 @@ export default class BufferedReader {
       num = delim
     }
     return new ReadableStream({
-      // start: controller => {
-      //   return this.readSlice(num).then(buf => {
-      //     if (buf.length === 0) {
-      //       controller.close()
-      //     }
-      //     controller.enqueue(buf)
-      //   })
-      // },
-
       pull: controller => {
         this.readSlice(num).then(buf => {
           if (buf.length === 0) {

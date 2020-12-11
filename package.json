@@ -23,7 +23,7 @@
     "prebuild": "rimraf dist",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts && typedoc --out docs --target es6 --theme minimal --mode file src",
     "start": "rollup -c rollup.config.ts -w",
-    "test": "jest --coverage",
+    "test": "jest --coverage --useStderr",
     "test:watch": "jest --coverage --watch",
     "test:prod": "npm run lint && npm run test -- --no-cache",
     "deploy-docs": "ts-node tools/gh-pages-publish",
@@ -49,7 +49,7 @@
     "transform": {
       ".(ts|tsx)": "ts-jest"
     },
-    "verbose": true,
+    "verbose": false,
     "runner": "jest-electron/runner",
     "testEnvironment": "jest-electron/environment",
     "testRegex": "(/__tests__/.*|\\.(test|spec))\\.(ts|tsx|js)$",

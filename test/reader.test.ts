@@ -1,6 +1,7 @@
 import { ParseErrMessage, ParseError } from '../src/errors'
 import Reader, { errInvalidDelim } from '../src/reader'
 import { RuneError } from '../src/utf8'
+import { stringStream } from '../src/io'
 
 type testcase = {
   name: string
@@ -15,7 +16,6 @@ type testcase = {
   fieldsPerRecord?: number
   lazyQuotes?: boolean
   trimLeadingSpace?: boolean
-  reuseRecord?: boolean
 }
 
 describe('Reader', () => {
@@ -261,15 +261,6 @@ x,,,
       trimLeadingSpace: true
     },
     {
-      name: 'ReadAllReuseRecord',
-      input: 'a,b\nc,d',
-      output: [
-        ['a', 'b'],
-        ['c', 'd']
-      ],
-      reuseRecord: true
-    },
-    {
       name: 'StartLine1', // Issue 19019
       input: 'a,"b\nc"d,e',
       error: new ParseError({ startLine: 1, line: 2, column: 1, err: ParseErrMessage.ErrQuote })
@@ -459,4 +450,35 @@ x,,,
       error: errInvalidDelim
     }
   ]
+
+  for (let tt of tests) {
+    it(`should handle ${tt.name}`, async () => {
+      const r = new Reader(stringStream(tt.input))
+
+      if (tt.comma) {
+        r.setComma(tt.comma)
+      }
+      if (tt.comment) {
+        r.setComment(tt.comment)
+      }
+      if (tt.useFieldsPerRecord) {
+        r.fieldsPerRecord = tt.fieldsPerRecord || 0
+      } else {
+        r.fieldsPerRecord = -1
+      }
+      r.lazyQuotes = tt.lazyQuotes || false
+      r.trimLeadingSpace = tt.trimLeadingSpace || false
+
+      try {
+        const out = await r.readAll()
+        if (!tt.output) {
+          expect(out).toHaveLength(0)
+        } else {
+          expect(out).toEqual(tt.output)
+        }
+      } catch (e) {
+        expect(e).toEqual(tt.error)
+      }
+    })
+  }
 })
