@@ -5,10 +5,12 @@ describe('ParseError', () => {
     try {
       throw new ParseError({ startLine: 1, line: 2, column: 3, err: ParseErrMessage.ErrBareQuote })
     } catch (e) {
-      expect(e.message).toEqual('parse error on line 2, column 3: bare " in non-quoted-field')
+      expect(e.message).toEqual(
+        'record on line 1; parse error on line 2, column 3: bare " in non-quoted-field'
+      )
     }
     try {
-      throw new ParseError({ startLine: 1, line: 2, column: 3, err: ParseErrMessage.ErrQuote })
+      throw new ParseError({ startLine: 2, line: 2, column: 3, err: ParseErrMessage.ErrQuote })
     } catch (e) {
       expect(e.message).toEqual(
         'parse error on line 2, column 3: extraneous or missing " in quoted-field'
@@ -16,7 +18,7 @@ describe('ParseError', () => {
     }
     try {
       throw new ParseError({
-        startLine: 1,
+        startLine: 2,
         line: 2,
         column: 3,
         err: ParseErrMessage.ErrTrailingComma
@@ -25,9 +27,9 @@ describe('ParseError', () => {
       expect(e.message).toEqual('parse error on line 2, column 3: extra delimiter at end of line')
     }
     try {
-      throw new ParseError({ startLine: 1, line: 2, err: ParseErrMessage.ErrFieldCount })
+      throw new ParseError({ startLine: 2, line: 2, err: ParseErrMessage.ErrFieldCount })
     } catch (e) {
-      expect(e.message).toEqual('parse error on line 2, column undefined: wrong number of fields')
+      expect(e.message).toEqual('record on line 2: wrong number of fields')
     }
   })
 })

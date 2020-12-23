@@ -23,11 +23,11 @@ export const errInvalidDelim = new ReaderError('invalid field or comment delimit
 const validDelim = (r: number) => {
   return (
     r !== 0 &&
-    r != '"'.charCodeAt(0) &&
-    r != '\r'.charCodeAt(0) &&
-    r != '\n'.charCodeAt(0) &&
+    r !== '"'.charCodeAt(0) &&
+    r !== '\r'.charCodeAt(0) &&
+    r !== '\n'.charCodeAt(0) &&
     validRune(r) &&
-    r != RuneError
+    r !== RuneError
   )
 }
 
@@ -64,10 +64,12 @@ export default class Reader {
     this.r = new BufferedReader(inputStream)
     this.setComma(',')
     if (config) {
-      if (config.comma && config.comma.length > 1)
+      if (config.comma && config.comma.length > 1) {
         throw new Error('invalid config: comma can be one character only')
-      if (config.comment && config.comment.length > 1)
+      }
+      if (config.comment && config.comment.length > 1) {
         throw new Error('invalid config: comment can be one character only')
+      }
       if (config.comma) {
         this.setComma(config.comma)
       }
@@ -206,7 +208,7 @@ export default class Reader {
         break
       } else {
         // Quoted string field
-        let break_parseField = false
+        let breakParseField = false
         line = line.slice(quoteLen)
         while (true) {
           const i = line.indexOf(qr)
@@ -228,7 +230,7 @@ export default class Reader {
             } else if (lengthNL(line) === line.length) {
               // `"\n` sequence (end of line).
               this.fieldIndexes.push(this.recordBuffer.length)
-              break_parseField = true
+              breakParseField = true
               break
             } else if (this.lazyQuotes) {
               // `"` sequence (bare quote).
@@ -260,11 +262,11 @@ export default class Reader {
               })
             }
             this.fieldIndexes.push(this.recordBuffer.length)
-            break_parseField = true
+            breakParseField = true
             break
           }
         }
-        if (break_parseField) {
+        if (breakParseField) {
           break
         }
       }
@@ -320,7 +322,7 @@ export default class Reader {
 
   // ReadAll reads all the remaining records from r.
   // Each record is a slice of fields.
-  // A successful call returns err == nil, not err == io.EOF. Because ReadAll is
+  // A successful call returns err === nil, not err === io.EOF. Because ReadAll is
   // defined to read until EOF, it does not treat end of file as an error to be
   // reported.
   async readAll(): Promise<string[][]> {

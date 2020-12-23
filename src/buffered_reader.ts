@@ -21,7 +21,7 @@ export default class BufferedReader {
   lastRuneSize?: number // size of last rune read for UnreadRune; -1 means invalid
   eof: boolean
 
-  constructor(rd: ReadableStream, size: number = 4096) {
+  constructor(rd: ReadableStream, size = 4096) {
     this.eof = false
     if (size < minReadBufferSize) {
       size = minReadBufferSize
@@ -133,7 +133,7 @@ export default class BufferedReader {
     }
 
     // Handle last byte, if any.
-    let i = this.line.length - 1
+    const i = this.line.length - 1
     if (i >= 0) {
       this.lastByte = this.line[i]
       this.lastRuneSize = -1
@@ -151,12 +151,17 @@ export default class BufferedReader {
     }
     return new ReadableStream({
       pull: controller => {
-        this.readSlice(num).then(buf => {
-          if (buf.length === 0) {
-            controller.close()
+        this.readSlice(num).then(
+          buf => {
+            if (buf.length === 0) {
+              controller.close()
+            }
+            controller.enqueue(buf)
+          },
+          err => {
+            throw err
           }
-          controller.enqueue(buf)
-        })
+        )
       }
     })
   }

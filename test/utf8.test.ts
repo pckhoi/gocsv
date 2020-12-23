@@ -95,7 +95,7 @@ describe('utf8 package', () => {
         expect(res[1]).toEqual(wantsize)
 
         // make sure bad sequences fail
-        if (b.length == 1) {
+        if (b.length === 1) {
           b[0] = 0x80
         } else {
           b[b.length - 1] = 0x7f

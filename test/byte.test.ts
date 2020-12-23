@@ -47,7 +47,7 @@ const isSpace: predicate = { f: unicode.isSpace, name: 'IsSpace' }
 const isDigit: predicate = { f: unicode.isDigit, name: 'IsDigit' }
 const isUpper: predicate = { f: unicode.isUpper, name: 'IsUpper' }
 const isValidRune: predicate = {
-  f: (r: number): boolean => r != RuneError,
+  f: (r: number): boolean => r !== RuneError,
   name: 'IsValidRune'
 }
 

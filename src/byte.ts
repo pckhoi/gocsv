@@ -198,7 +198,7 @@ export const cutover = (n: number): number => {
 //   for (let i = 0; i < n; i++) {
 //     h = h * PrimeRK + s[i]
 //   }
-//   if (h == hashsep && equal(s.slice(0, n), sep)) {
+//   if (h === hashsep && equal(s.slice(0, n), sep)) {
 //     return 0
 //   }
 //   let i = n
@@ -207,7 +207,7 @@ export const cutover = (n: number): number => {
 //     h += s[i]
 //     h -= pow * s[i - n]
 //     i++
-//     if (h == hashsep && equal(s.slice(i - n, i), sep)) {
+//     if (h === hashsep && equal(s.slice(i - n, i), sep)) {
 //       return i - n
 //     }
 //   }
@@ -217,13 +217,13 @@ export const cutover = (n: number): number => {
 // Index returns the index of the first instance of sep in s, or -1 if sep is not present in s.
 export const index = (s: Uint8Array, sep: Uint8Array): number => {
   const n = sep.length
-  if (n == 0) {
+  if (n === 0) {
     return 0
   }
-  if (n == 1) {
+  if (n === 1) {
     return s.indexOf(sep[0])
   }
-  if (n == s.length) {
+  if (n === s.length) {
     if (equal(sep, s)) {
       return 0
     }
@@ -240,14 +240,14 @@ export const index = (s: Uint8Array, sep: Uint8Array): number => {
     const t = s.length - n + 1
     let fails = 0
     while (i < t) {
-      if (s[i] != c0) {
+      if (s[i] !== c0) {
         const o = s.slice(i + 1, t).indexOf(c0)
         if (o < 0) {
           return -1
         }
         i += o + 1
       }
-      if (s[i + 1] == c1 && equal(s.slice(i, i + n), sep)) {
+      if (s[i + 1] === c1 && equal(s.slice(i, i + n), sep)) {
         return i
       }
       fails++
@@ -268,7 +268,7 @@ export const index = (s: Uint8Array, sep: Uint8Array): number => {
       }
       i += o + 1
     }
-    if (s[i + 1] == c1 && equal(s.slice(i, i + n), sep)) {
+    if (s[i + 1] === c1 && equal(s.slice(i, i + n), sep)) {
       return i
     }
     i++

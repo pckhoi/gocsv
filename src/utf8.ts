@@ -106,7 +106,7 @@ export const decodeRune = (p: Uint8Array): [number, number] => {
   const p0 = p[0]
   const x = first[p0]
   if (x >= as) {
-    // The following code simulates an additional check for x == xx and
+    // The following code simulates an additional check for x === xx and
     // handling the ASCII and invalid cases accordingly. This mask-and-or
     // approach prevents an additional branch.
     const mask = (x << 31) >> 31 // Create 0x0000 or 0xFFFF.
@@ -122,7 +122,7 @@ export const decodeRune = (p: Uint8Array): [number, number] => {
     return [RuneError, 1]
   }
   if (sz <= 2) {
-    // <= instead of == to help the compiler eliminate some bounds checks
+    // <= instead of === to help the compiler eliminate some bounds checks
     return [((p0 & mask2) << 6) | (b1 & maskx), 2]
   }
   const b2 = p[2]
@@ -223,7 +223,7 @@ export const decodeLastRune = (p: Uint8Array): [number, number] => {
   const res = decodeRune(p.slice(start, end))
   r = res[0]
   const size = res[1]
-  if (start + size != end) {
+  if (start + size !== end) {
     return [RuneError, 1]
   }
   return [r, size]
