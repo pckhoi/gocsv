@@ -6,10 +6,9 @@ const script = document.createElement('script')
 document.body.appendChild(script)
 
 // Benchmark could not pick up lodash otherwise
-const bm: any = Benchmark.runInContext({ _ })
+const bm = Benchmark.runInContext({ _ })
 
 // avoid `ReferenceError: Benchmark is not defined` error because Benchmark is assumed to be in window
-const win = window as any
-win.Benchmark = bm
+window.Benchmark = bm
 
 export default bm

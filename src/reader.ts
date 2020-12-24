@@ -82,14 +82,14 @@ export default class Reader {
     }
   }
 
-  setComma(cstr: string) {
+  setComma(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
     this.comma = res[0]
     this.commaLen = res[1]
   }
 
-  setComment(cstr: string) {
+  setComment(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
     this.comment = res[0]
@@ -272,9 +272,6 @@ export default class Reader {
       }
     }
 
-    // Create a single string and create slices out of it.
-    // This pins the memory of the fields together, but allocates once.
-    const str = this.recordBuffer // Convert to string once to batch allocations
     if (!dst) {
       dst = []
     }
