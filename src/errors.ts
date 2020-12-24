@@ -23,13 +23,15 @@ export class ParseError extends Error {
     } else {
       super(`parse error on line ${args.line}, column ${args.column}: ${args.err}`)
     }
-  }
-}
-
-export class BufferFullError extends Error {
-  constructor() {
-    super('buffer full')
+    Object.setPrototypeOf(this, ParseError.prototype)
   }
 }
 
 export class EOF extends Error {}
+
+export class LineReaderError extends Error {
+  constructor(val: number | string) {
+    super(`key not found: ${val}`)
+    Object.setPrototypeOf(this, LineReaderError.prototype)
+  }
+}
