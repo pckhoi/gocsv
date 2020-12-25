@@ -1,9 +1,37 @@
-import BufferedReader from './buffered_reader'
+import SliceReader from './slice_reader'
 import { appendBytesArray, indexRune, trimLeftFunc } from './byte'
 import { ParseError, ParseErrMessage } from './errors'
 import { isSpace } from './unicode'
 import { decodeRune, runeCount, RuneError, validRune } from './utf8'
 
+/**
+ * Called once for each record. If this callback returns `true`
+ * then abort reading prematurely.
+ * @typedef {Object} ReaderConfig
+ * @property {string|undefined} comma - The field delimiter.
+ * It is set to comma (',') by NewReader.
+ * Comma must be a valid rune and must not be \r, \n,
+ * or the Unicode replacement character (0xFFFD).
+ * @property {string|undefined} comment - Comment, if not 0, is the comment character.
+ * Lines beginning with the comment character without preceding whitespace are ignored.
+ * With leading whitespace the comment character becomes part of the
+ * field, even if {@link ReaderConfig#trimLeadingSpace} is true.
+ * Comment must be a valid rune and must not be \r, \n,
+ * or the Unicode replacement character (0xFFFD).
+ * It must also not be equal to {@link ReaderConfig#comma}.
+ * @property {number|undefined} fieldsPerRecord - The number of expected fields per record.
+ * If fieldsPerRecord is positive, Read requires each record to
+ * have the given number of fields. If fieldsPerRecord is 0, Read sets it to
+ * the number of fields in the first record, so that future records must
+ * have the same field count. If fieldsPerRecord is negative, no check is
+ * made and records may have a variable number of fields.
+ * @property {boolean|undefined} lazyQuotes - If LazyQuotes is true,
+ * a quote may appear in an unquoted field and a
+ * non-doubled quote may appear in a quoted field.
+ * @property {boolean|undefined} trimLeadingSpace - If TrimLeadingSpace is true,
+ * leading white space in a field is ignored.
+ * This is done even if the field delimiter, Comma, is white space.
+ */
 type ReaderConfig = {
   comma?: string
   comment?: string
@@ -46,6 +74,9 @@ const nextRune = (b?: Uint8Array) => {
   return r
 }
 
+/**
+ * @class
+ */
 export default class Reader {
   comma = 0
   comment = 0
@@ -53,15 +84,25 @@ export default class Reader {
   fieldsPerRecord = 0
   lazyQuotes = false
   trimLeadingSpace = false
-  r: BufferedReader
+  r: SliceReader
   numLine = 0
+  line = new Uint8Array()
+  fullLine = new Uint8Array()
   fieldIndexes: number[] = []
   lastRecord = []
+  parsingQuotedString = false
+  recLine = 0
   rawBuffer = new Uint8Array()
   recordBuffer = new Uint8Array()
 
-  constructor(inputStream: ReadableStream, config?: ReaderConfig) {
-    this.r = new BufferedReader(inputStream)
+  /**
+   * Create a new instance of Reader.
+   * @constructor
+   * @param {ReadableStream|string|Uint8Array} input - CSV text string, bytes array or readable stream of those types.
+   * @param {ReaderConfig|undefined} config - If present then override default settings.
+   */
+  constructor(input: ReadableStream | string | Uint8Array, config?: ReaderConfig) {
+    this.r = new SliceReader(input)
     this.setComma(',')
     if (config) {
       if (config.comma && config.comma.length > 1) {
@@ -82,6 +123,9 @@ export default class Reader {
     }
   }
 
+  /**
+   * @ignore
+   */
   setComma(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
@@ -89,38 +133,21 @@ export default class Reader {
     this.commaLen = res[1]
   }
 
+  /**
+   * @ignore
+   */
   setComment(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
     this.comment = res[0]
   }
 
-  async readLine(): Promise<Uint8Array> {
+  private _readLine(): Uint8Array | null {
     const nl = '\n'.charCodeAt(0)
     const cr = '\r'.charCodeAt(0)
-    let line
-    try {
-      line = await this.r.readSlice(nl)
-    } catch (e) {
-      if (e.message.indexOf('buffer is full') !== -1) {
-        this.rawBuffer = Uint8Array.from(this.r.line)
-        while (true) {
-          try {
-            await this.r.readSlice(nl)
-            this.rawBuffer = appendBytesArray(this.rawBuffer, this.r.line)
-            break
-          } catch (e) {
-            if (e.message.indexOf('buffer is full') === -1) {
-              throw e
-            }
-            this.rawBuffer = appendBytesArray(this.rawBuffer, this.r.line)
-          }
-        }
-        line = this.rawBuffer
-      } else {
-        throw e
-      }
-    }
+    const sl = this.r.readSlice(nl)
+    if (sl === null) return sl
+    let line = sl as Uint8Array
 
     if (line.length > 0 && this.r.eof) {
       // For backwards compatibility, drop trailing \r before EOF.
@@ -138,7 +165,7 @@ export default class Reader {
     return line
   }
 
-  async readRecord(dst?: string[]): Promise<string[]> {
+  private _validateCommaComment(): void {
     if (
       this.comma === this.comment ||
       !validDelim(this.comma) ||
@@ -146,128 +173,160 @@ export default class Reader {
     ) {
       throw errInvalidDelim
     }
+  }
+
+  private _handleEOF(): void {
+    // Abrupt end of file (EOF or error).
+    if (!this.lazyQuotes) {
+      const col = runeCount(this.fullLine)
+      throw new ParseError({
+        startLine: this.recLine,
+        line: this.numLine,
+        column: col,
+        err: ParseErrMessage.ErrQuote,
+      })
+    }
+    this.fieldIndexes.push(this.recordBuffer.length)
+    this.parsingQuotedString = false
+  }
+
+  private _readRecord(dst?: string[]): string[] {
+    this._validateCommaComment()
 
     // Read line (automatically skipping past empty lines and any comments).
-    let line = new Uint8Array()
-    let fullLine = new Uint8Array()
-    while (true) {
-      line = await this.readLine()
-      if (this.comment !== 0 && nextRune(line) === this.comment) {
-        line = new Uint8Array()
-        continue // Skip comment lines
+    if (this.parsingQuotedString) {
+      const sl = this._readLine()
+      if (sl === null) {
+        return []
       }
-      if (line.length > 0 && line.length === lengthNL(line)) {
-        line = new Uint8Array()
-        continue // Skip empty lines
+      this.line = sl
+      this.fullLine = this.line
+    } else {
+      this.line = this.line.slice(0, 0)
+      this.fullLine = this.fullLine.slice(0, 0)
+      while (true) {
+        const sl = this._readLine()
+        if (sl === null) return []
+        this.line = sl
+        if (this.comment !== 0 && nextRune(this.line) === this.comment) {
+          this.line = this.line.slice(0, 0)
+          continue // Skip comment lines
+        }
+        if (this.line.length > 0 && this.line.length === lengthNL(this.line)) {
+          this.line = this.line.slice(0, 0)
+          continue // Skip empty lines
+        }
+        this.fullLine = this.line
+        break
       }
-      fullLine = line
-      break
-    }
-    if (fullLine.length === 0) {
-      return []
+      if (this.fullLine.length === 0) {
+        return []
+      }
     }
 
     // Parse each field in the record.
     const quoteLen = 1
     const qr = '"'.charCodeAt(0)
-    const recLine = this.numLine // Starting line for record
-    this.recordBuffer = this.recordBuffer.slice(0, 0)
-    this.fieldIndexes = this.fieldIndexes.slice(0, 0)
+    if (!this.parsingQuotedString) {
+      this.recordBuffer = this.recordBuffer.slice(0, 0)
+      this.fieldIndexes = this.fieldIndexes.slice(0, 0)
+      this.recLine = this.numLine // Starting line for record
+    }
     while (true) {
-      if (this.trimLeadingSpace) {
-        line = trimLeftFunc(line, isSpace)
-      }
-      if (line.length === 0 || line[0] !== qr) {
-        // Non-quoted string field
-        const i = indexRune(line, this.comma)
-        let field = line
+      if (this.parsingQuotedString) {
+        const i = this.line.indexOf(qr)
         if (i >= 0) {
-          field = field.slice(0, i)
-        } else {
-          field = field.slice(0, field.length - lengthNL(field))
-        }
-        // Check to make sure a quote does not appear in field.
-        if (!this.lazyQuotes) {
-          const j = field.indexOf(qr)
-          if (j >= 0) {
-            const col = runeCount(fullLine.slice(0, fullLine.length - line.slice(j).length))
+          // Hit next quote.
+          this.recordBuffer = appendBytesArray(this.recordBuffer, this.line.slice(0, i))
+          this.line = this.line.slice(i + quoteLen)
+          const rn = nextRune(this.line)
+
+          if (rn === qr) {
+            // `""` sequence (append quote).
+            this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
+            this.line = this.line.slice(quoteLen)
+          } else if (rn === this.comma) {
+            // `",` sequence (end of field).
+            this.line = this.line.slice(this.commaLen)
+            this.fieldIndexes.push(this.recordBuffer.length)
+            this.parsingQuotedString = false
+            continue
+          } else if (lengthNL(this.line) === this.line.length) {
+            // `"\n` sequence (end of line).
+            this.fieldIndexes.push(this.recordBuffer.length)
+            this.parsingQuotedString = false
+            break
+          } else if (this.lazyQuotes) {
+            // `"` sequence (bare quote).
+            this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
+          } else {
+            // `"*` sequence (invalid non-escaped quote).
+            const col = runeCount(
+              this.fullLine.slice(0, this.fullLine.length - this.line.length - quoteLen)
+            )
             throw new ParseError({
-              startLine: recLine,
+              startLine: this.recLine,
               line: this.numLine,
               column: col,
-              err: ParseErrMessage.ErrBareQuote
+              err: ParseErrMessage.ErrQuote,
             })
           }
-        }
-        this.recordBuffer = appendBytesArray(this.recordBuffer, field)
-        this.fieldIndexes.push(this.recordBuffer.length)
-        if (i >= 0) {
-          line = line.slice(i + this.commaLen)
-          continue
-        }
-        break
-      } else {
-        // Quoted string field
-        let breakParseField = false
-        line = line.slice(quoteLen)
-        while (true) {
-          const i = line.indexOf(qr)
-          if (i >= 0) {
-            // Hit next quote.
-            this.recordBuffer = appendBytesArray(this.recordBuffer, line.slice(0, i))
-            line = line.slice(i + quoteLen)
-            const rn = nextRune(line)
-
-            if (rn === qr) {
-              // `""` sequence (append quote).
-              this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
-              line = line.slice(quoteLen)
-            } else if (rn === this.comma) {
-              // `",` sequence (end of field).
-              line = line.slice(this.commaLen)
-              this.fieldIndexes.push(this.recordBuffer.length)
+        } else if (this.line.length > 0) {
+          // Hit end of line (copy all data so far).
+          this.recordBuffer = appendBytesArray(this.recordBuffer, this.line)
+          const sl = this._readLine()
+          if (sl === null) {
+            if (this.r.eof) {
+              this._handleEOF()
               break
-            } else if (lengthNL(line) === line.length) {
-              // `"\n` sequence (end of line).
-              this.fieldIndexes.push(this.recordBuffer.length)
-              breakParseField = true
-              break
-            } else if (this.lazyQuotes) {
-              // `"` sequence (bare quote).
-              this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
-            } else {
-              // `"*` sequence (invalid non-escaped quote).
-              const col = runeCount(fullLine.slice(0, fullLine.length - line.length - quoteLen))
-              throw new ParseError({
-                startLine: recLine,
-                line: this.numLine,
-                column: col,
-                err: ParseErrMessage.ErrQuote
-              })
             }
-          } else if (line.length > 0) {
-            // Hit end of line (copy all data so far).
-            this.recordBuffer = appendBytesArray(this.recordBuffer, line)
-            line = await this.readLine()
-            fullLine = line
-          } else {
-            // Abrupt end of file (EOF or error).
-            if (!this.lazyQuotes) {
-              const col = runeCount(fullLine)
-              throw new ParseError({
-                startLine: recLine,
-                line: this.numLine,
-                column: col,
-                err: ParseErrMessage.ErrQuote
-              })
-            }
-            this.fieldIndexes.push(this.recordBuffer.length)
-            breakParseField = true
-            break
+            return []
           }
-        }
-        if (breakParseField) {
+          this.line = sl
+          this.fullLine = this.line
+        } else {
+          this._handleEOF()
           break
+        }
+      } else {
+        if (this.trimLeadingSpace) {
+          this.line = trimLeftFunc(this.line, isSpace)
+        }
+        if (this.line.length === 0 || this.line[0] !== qr) {
+          // Non-quoted string field
+          const i = indexRune(this.line, this.comma)
+          let field = this.line
+          if (i >= 0) {
+            field = field.slice(0, i)
+          } else {
+            field = field.slice(0, field.length - lengthNL(field))
+          }
+          // Check to make sure a quote does not appear in field.
+          if (!this.lazyQuotes) {
+            const j = field.indexOf(qr)
+            if (j >= 0) {
+              const col = runeCount(
+                this.fullLine.slice(0, this.fullLine.length - this.line.slice(j).length)
+              )
+              throw new ParseError({
+                startLine: this.recLine,
+                line: this.numLine,
+                column: col,
+                err: ParseErrMessage.ErrBareQuote,
+              })
+            }
+          }
+          this.recordBuffer = appendBytesArray(this.recordBuffer, field)
+          this.fieldIndexes.push(this.recordBuffer.length)
+          if (i >= 0) {
+            this.line = this.line.slice(i + this.commaLen)
+            continue
+          }
+          break
+        } else {
+          // Quoted string field
+          this.parsingQuotedString = true
+          this.line = this.line.slice(quoteLen)
         }
       }
     }
@@ -290,9 +349,9 @@ export default class Reader {
     if (this.fieldsPerRecord > 0) {
       if (dst.length !== this.fieldsPerRecord) {
         throw new ParseError({
-          startLine: recLine,
-          line: recLine,
-          err: ParseErrMessage.ErrFieldCount
+          startLine: this.recLine,
+          line: this.recLine,
+          err: ParseErrMessage.ErrFieldCount,
         })
       }
     } else if (this.fieldsPerRecord === 0) {
@@ -301,35 +360,29 @@ export default class Reader {
     return dst
   }
 
-  // Read reads one record (a slice of fields) from r.
-  // If the record has an unexpected number of fields,
-  // Read returns the record along with the error ErrFieldCount.
-  // Except for that case, Read always returns either a non-nil
-  // record or a non-nil error, but not both.
-  // If there is no data left to be read, Read returns nil, io.EOF.
-  // If ReuseRecord is true, the returned slice may be shared
-  // between multiple calls to Read.
-  async read(): Promise<string[] | null> {
-    const record = await this.readRecord()
-    if (record.length === 0) {
-      return null
-    }
-    return record
-  }
+  /**
+   * Called once for each record. If this callback returns `true`
+   * then abort reading prematurely.
+   * @callback Reader~recordCallback
+   * @param {string[]} record - Array of fields in this record.
+   * @returns {boolean|undefined} Whether to abort reading.
+   */
 
-  // ReadAll reads all the remaining records from r.
-  // Each record is a slice of fields.
-  // A successful call returns err === nil, not err === io.EOF. Because ReadAll is
-  // defined to read until EOF, it does not treat end of file as an error to be
-  // reported.
-  async readAll(): Promise<string[][]> {
-    const records: string[][] = []
-    while (true) {
-      const record = await this.readRecord()
-      if (record.length === 0) {
-        return records
+  /**
+   * Read all the remaining records.
+   * @param {Reader~recordCallback} cb - The callback that will be called with each record.
+   * @returns {Promise} Resolve when there's no record left or if reading is aborted.
+   */
+  async readAll(cb: (record: string[]) => boolean | void): Promise<void> {
+    do {
+      await this.r.fill()
+      while (true) {
+        const record = this._readRecord()
+        if (record.length === 0) {
+          break
+        }
+        if (cb(record)) return
       }
-      records.push(record)
-    }
+    } while (!this.r.eof)
   }
 }

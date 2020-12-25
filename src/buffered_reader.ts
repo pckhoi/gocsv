@@ -12,7 +12,7 @@ class BufferedReaderError extends Error {
 // BufferedReader mirror functionalities of go's bufio.Reader
 export default class BufferedReader {
   buf = new Uint8Array()
-  rd?: ReadableStream // reader provided by the client
+  rd: ReadableStream // reader provided by the client
   r = 0 // buf read position
   w = 0 // buf write position
   line = new Uint8Array()
@@ -26,10 +26,11 @@ export default class BufferedReader {
     if (size < minReadBufferSize) {
       size = minReadBufferSize
     }
+    this.rd = rd
     this.reset(new Uint8Array(size), rd)
   }
 
-  reset(buf: Uint8Array, r: ReadableStream) {
+  reset(buf: Uint8Array, r: ReadableStream): void {
     this.buf = buf
     this.rd = r
     this.lastByte = -1
@@ -40,7 +41,7 @@ export default class BufferedReader {
     return this.w - this.r
   }
 
-  async fill() {
+  async fill(): Promise<void> {
     // Slide existing data to beginning.
     if (this.r > 0) {
       this.buf.copyWithin(0, this.r, this.w)
@@ -142,7 +143,7 @@ export default class BufferedReader {
     return this.line
   }
 
-  sliceStream(delim: number | string) {
+  sliceStream(delim: number | string): ReadableStream {
     let num: number
     if (typeof delim === 'string') {
       num = byte(delim)
