@@ -75,7 +75,7 @@ describe('SliceReader', () => {
           controller.close()
         }
         i++
-      }
+      },
     })
     const r = new SliceReader(stream)
     await r.fill()

@@ -8,7 +8,7 @@ const isReadableStream = (s: any): s is ReadableStream => {
 }
 
 export default class SliceReader {
-  buf = new Uint8Array()
+  buf = new ArrayBuffer(0)
   rd?: ReadableStream // reader provided by the client
   r = 0 // buf read position
   eof = false
@@ -17,10 +17,10 @@ export default class SliceReader {
     if (isReadableStream(source)) {
       this.rd = source
     } else if (typeof source === 'string') {
-      this.buf = bytes(source)
+      this.buf = new TextEncoder().encode(source).buffer
       this.eof = true
     } else {
-      this.buf = source
+      this.buf = source.buffer
       this.eof = true
     }
   }
@@ -28,13 +28,7 @@ export default class SliceReader {
   async fill(): Promise<void> {
     if (!this.rd) return
 
-    const existingData = this.buf.slice(this.r)
-    this.buf = existingData
-    const existingLen = existingData.length
-    // Slide existing data to beginning.
-    if (this.r > 0) {
-      this.r = 0
-    }
+    const existingLen = this.buf.byteLength - this.r
 
     const reader = this.rd.getReader()
 
@@ -57,9 +51,11 @@ export default class SliceReader {
       }
 
       const n = bArr.length
-      this.buf = new Uint8Array(n + existingLen)
-      this.buf.set(existingData)
-      this.buf.set(bArr, existingLen)
+      const newBytesArray = new Uint8Array(n + existingLen)
+      newBytesArray.set(new Uint8Array(this.buf, this.r))
+      newBytesArray.set(bArr, existingLen)
+      this.buf = newBytesArray.buffer
+      this.r = 0
       if (n > 0) {
         reader.releaseLock()
         return
@@ -70,17 +66,18 @@ export default class SliceReader {
 
   readSlice(delim: number): Uint8Array | null {
     // Search buffer.
-    const n = this.buf.length
-    if (this.r === n) return null
-    const i = this.buf.slice(this.r).indexOf(delim)
+    const view = new Uint8Array(this.buf, this.r)
+    const n = view.length
+    if (n === 0) {
+      return null
+    }
+    const i = view.indexOf(delim)
     if (i >= 0) {
-      const line = this.buf.slice(this.r, this.r + i + 1)
       this.r += i + 1
-      return line
+      return view.slice(0, i + 1)
     } else if (this.eof) {
-      const line = this.buf.slice(this.r)
-      this.r = n
-      return line
+      this.r += view.length
+      return view
     }
     return null
   }
