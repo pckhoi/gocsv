@@ -14,5 +14,7 @@ export const timeExecution = async (name, f) => {
   const t0 = performance.now()
   await f()
   const t1 = performance.now()
-  eprint(`${name} took ${(t1 - t0).toFixed(2)} milliseconds.`)
+  const text = `${name} took ${(t1 - t0).toFixed(2)} milliseconds.`
+  eprint(text)
+  console.log(text)
 }

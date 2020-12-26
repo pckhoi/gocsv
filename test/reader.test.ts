@@ -1,7 +1,6 @@
 import { ParseErrMessage, ParseError } from '../src/errors'
 import Reader, { errInvalidDelim, ReaderConfig } from '../src/reader'
 import { RuneError } from '../src/utf8'
-import { stringStream } from '../src/io'
 
 type testcase = {
   name: string
@@ -479,7 +478,7 @@ x,,,
       config.lazyQuotes = tt.lazyQuotes || false
       config.trimLeadingSpace = tt.trimLeadingSpace || false
 
-      const r = new Reader(stringStream(tt.input), config)
+      const r = new Reader(tt.input || '', config)
       try {
         const out: string[][] = []
         await r.readAll(rec => {

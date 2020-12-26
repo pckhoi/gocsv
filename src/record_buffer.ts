@@ -1,9 +1,7 @@
 import { ParseErrMessage, ParseError } from './errors'
 
 export default class RecordBuffer {
-  array = new Uint8Array(4096)
   writeIdx = 0
-  fieldIndexes: number[] = []
   fieldsPerRecord: number
   fieldBuffer: string[] = []
   fields: string[] = []
@@ -27,7 +25,7 @@ export default class RecordBuffer {
   }
 
   demarcateField(): void {
-    const s = this.fieldBuffer.join('')
+    const s = this.fieldBuffer.length === 1 ? this.fieldBuffer[0] : this.fieldBuffer.join('')
     if (this.fieldsPerRecord > 0) {
       this.fields[this.writeIdx] = s
     } else {

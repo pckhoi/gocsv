@@ -4,7 +4,6 @@ import Papa from 'papaparse'
 
 import Benchmark from './benchmark'
 import Reader from '../src/reader'
-import { stringStream } from '../src/io'
 import csvBase64 from './players_20.csv'
 import { base64ToArrayBuffer, timeExecution } from './utils'
 
@@ -29,96 +28,48 @@ xxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,zzzzzzzzzzzzzzzzzzzzzz
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz,wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww,vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 `.repeat(3)
 
-const run = async () => {
-  await timeExecution('Read players_20.csv with CSV.js', async () => {
-    const r = new Reader(file.stream())
-    let i = 0
-    while (true) {
-      const sl = await r.read()
-      if (!sl) {
-        break
-      }
-      i++
-    }
-    if (i !== 18279) {
-      throw new Error(`unexpected number of rows ${i}`)
-    }
+const suite = new Benchmark.Suite('Reader')
+
+suite
+  .add('CSVJS.Reader', async () => {
+    const r = new Reader(benchmarkCSVData)
+    await r.readAll(() => {})
   })
-  await timeExecution(
-    'Read players_20.csv with PapaParse',
-    () =>
-      new Promise(resolve => {
-        Papa.parse(file, {
-          complete: results => {
-            if (results.data.length !== 18280) {
-              throw new Error(`unexpected number of rows ${results.data.length}`)
-            }
-            resolve()
-          }
-        })
+  .add('CSVJS.Reader#largeFields', async () => {
+    const r = new Reader(largeFieldsCSVData)
+    await r.readAll(() => {})
+  })
+  .on('cycle', function(event) {
+    eprint(String(event.target))
+  })
+  .on('complete', async () => {
+    const str = await file.text()
+    await timeExecution('Read players_20.csv with CSV.js', async () => {
+      const r = new Reader(str)
+      let i = 0
+      await r.readAll(() => {
+        i++
       })
-  )
-  eprintKill()
-}
-run()
-
-// const suite = new Benchmark.Suite('Reader')
-
-// suite
-//   .add('CSVJS.Reader', async () => {
-//     const r = new Reader(stringStream(benchmarkCSVData))
-//     while (true) {
-//       const sl = await r.read()
-//       if (!sl) {
-//         break
-//       }
-//     }
-//   })
-//   .add('CSVJS.Reader#largeFields', async () => {
-//     const r = new Reader(stringStream(largeFieldsCSVData))
-//     while (true) {
-//       const sl = await r.read()
-//       if (!sl) {
-//         break
-//       }
-//     }
-//   })
-//   .on('cycle', function(event) {
-//     eprint(String(event.target))
-//   })
-//   .on('complete', async () => {
-//     await timeExecution('Read players_20.csv with CSV.js', async () => {
-//       const r = new Reader(file.stream())
-//       let i = 0
-//       while (true) {
-//         const sl = await r.read()
-//         if (!sl) {
-//           break
-//         }
-//         i++
-//       }
-//       if (i !== 18279) {
-//         throw new Error(`unexpected number of rows ${i}`)
-//       }
-//     })
-//     await timeExecution(
-//       'Read players_20.csv with PapaParse',
-//       () =>
-//         new Promise(resolve => {
-//           Papa.parse(file, {
-//             complete: results => {
-//               eprint(JSON.stringify(results))
-//               if (results.length !== 18278) {
-//                 throw new Error(`unexpected number of rows ${results.length}`)
-//               }
-//               resolve()
-//             }
-//           })
-//         })
-//     )
-//     eprintKill()
-//   })
-//   // run async
-//   .run({
-//     async: true
-//   })
+      if (i !== 18279) {
+        throw new Error(`unexpected number of rows ${i}`)
+      }
+    })
+    await timeExecution(
+      'Read players_20.csv with PapaParse',
+      () =>
+        new Promise(resolve => {
+          Papa.parse(file, {
+            complete: results => {
+              if (results.data.length !== 18280) {
+                throw new Error(`unexpected number of rows ${results.data.length}`)
+              }
+              resolve()
+            },
+          })
+        })
+    )
+    eprintKill()
+  })
+  .run({
+    async: true,
+  })

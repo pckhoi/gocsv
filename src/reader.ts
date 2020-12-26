@@ -3,6 +3,10 @@ import { ParseError, ParseErrMessage } from './errors'
 import { RuneError, validRune } from './utf8'
 import RecordBuffer from './record_buffer'
 
+const isStringArray = (s: any): s is string[] => {
+  return s.length === 0 || (s.length > 0 && typeof s[0] === 'string')
+}
+
 /**
  * Called once for each record. If this callback returns `true`
  * then abort reading prematurely.
@@ -169,14 +173,109 @@ export default class Reader {
     this.parsingQuotedString = false
   }
 
-  private _readRecord(): string[] {
-    this._validateCommaComment()
+  private _processLine(): boolean {
+    if (this.trimLeadingSpace) {
+      this.line = this.line.trimStart()
+    }
+    if (this.line.length === 0 || this.line[0] !== '"') {
+      // Non-quoted string field
+      const i = this.line.indexOf(this.comma)
+      let field = this.line
+      if (i >= 0) {
+        field = field.slice(0, i)
+      } else {
+        field = field.slice(0, field.length - lengthNL(field))
+      }
+      // Check to make sure a quote does not appear in field.
+      if (!this.lazyQuotes) {
+        const j = field.indexOf('"')
+        if (j >= 0) {
+          const col = this.fullLine.length - (this.line.length - j)
+          throw new ParseError({
+            startLine: this.recLine,
+            line: this.numLine,
+            column: col,
+            err: ParseErrMessage.ErrBareQuote,
+          })
+        }
+      }
+      this.recordBuffer.append(field)
+      this.recordBuffer.demarcateField()
+      if (i >= 0) {
+        this.line = this.line.slice(i + this.commaLen)
+        return false
+      }
+      return true
+    } else {
+      // Quoted string field
+      this.parsingQuotedString = true
+      this.line = this.line.slice(1)
+    }
+    return false
+  }
 
+  private _parseQuotedString(): boolean | string[] {
+    const i = this.line.indexOf('"')
+    if (i >= 0) {
+      // Hit next quote.
+      this.recordBuffer.append(this.line.slice(0, i))
+      this.line = this.line.slice(i + 1)
+      const rn = this.line[0]
+
+      if (rn === '"') {
+        // `""` sequence (append quote).
+        this.recordBuffer.append('"')
+        this.line = this.line.slice(1)
+      } else if (rn === this.comma) {
+        // `",` sequence (end of field).
+        this.line = this.line.slice(this.commaLen)
+        this.recordBuffer.demarcateField()
+        this.parsingQuotedString = false
+        return false
+      } else if (lengthNL(this.line) === this.line.length) {
+        // `"\n` sequence (end of line).
+        this.recordBuffer.demarcateField()
+        this.parsingQuotedString = false
+        return true
+      } else if (this.lazyQuotes) {
+        // `"` sequence (bare quote).
+        this.recordBuffer.append('"')
+      } else {
+        // `"*` sequence (invalid non-escaped quote).
+        const col = this.fullLine.length - this.line.length - 1
+        throw new ParseError({
+          startLine: this.recLine,
+          line: this.numLine,
+          column: col,
+          err: ParseErrMessage.ErrQuote,
+        })
+      }
+    } else if (this.line.length > 0) {
+      // Hit end of line (copy all data so far).
+      this.recordBuffer.append(this.line)
+      const sl = this._readLine()
+      if (sl === null) {
+        if (this.r.eof) {
+          this._handleEOF()
+          return true
+        }
+        return []
+      }
+      this.line = sl
+      this.fullLine = this.line
+    } else {
+      this._handleEOF()
+      return true
+    }
+    return false
+  }
+
+  private _readLineSkipEmpty(): boolean {
     // Read line (automatically skipping past empty lines and any comments).
     if (this.parsingQuotedString) {
       const sl = this._readLine()
       if (sl === null) {
-        return []
+        return true
       }
       this.line = sl
       this.fullLine = this.line
@@ -185,7 +284,7 @@ export default class Reader {
       this.fullLine = ''
       while (true) {
         const sl = this._readLine()
-        if (sl === null) return []
+        if (sl === null) return true
         this.line = sl
         if (this.comment !== '' && this.line[0] === this.comment) {
           this.line = ''
@@ -199,111 +298,35 @@ export default class Reader {
         break
       }
       if (this.fullLine.length === 0) {
-        return []
+        return true
       }
     }
+    return false
+  }
+
+  private _fillRecordBuffer(): boolean {
+    while (true) {
+      if (this.parsingQuotedString) {
+        const sl = this._parseQuotedString()
+        if (isStringArray(sl)) return true
+        if (sl) break
+      } else {
+        if (this._processLine()) break
+      }
+    }
+    return false
+  }
+
+  private _readRecord(): string[] {
+    this._validateCommaComment()
+    if (this._readLineSkipEmpty()) return []
 
     // Parse each field in the record.
-    const quoteLen = 1
-    const qr = '"'
     if (!this.parsingQuotedString) {
       this.recordBuffer.reset()
       this.recLine = this.numLine // Starting line for record
     }
-    while (true) {
-      if (this.parsingQuotedString) {
-        const i = this.line.indexOf(qr)
-        if (i >= 0) {
-          // Hit next quote.
-          this.recordBuffer.append(this.line.slice(0, i))
-          this.line = this.line.slice(i + quoteLen)
-          const rn = this.line[0]
-
-          if (rn === qr) {
-            // `""` sequence (append quote).
-            this.recordBuffer.append(qr)
-            this.line = this.line.slice(quoteLen)
-          } else if (rn === this.comma) {
-            // `",` sequence (end of field).
-            this.line = this.line.slice(this.commaLen)
-            this.recordBuffer.demarcateField()
-            this.parsingQuotedString = false
-            continue
-          } else if (lengthNL(this.line) === this.line.length) {
-            // `"\n` sequence (end of line).
-            this.recordBuffer.demarcateField()
-            this.parsingQuotedString = false
-            break
-          } else if (this.lazyQuotes) {
-            // `"` sequence (bare quote).
-            this.recordBuffer.append(qr)
-          } else {
-            // `"*` sequence (invalid non-escaped quote).
-            const col = this.fullLine.length - this.line.length - quoteLen
-            throw new ParseError({
-              startLine: this.recLine,
-              line: this.numLine,
-              column: col,
-              err: ParseErrMessage.ErrQuote,
-            })
-          }
-        } else if (this.line.length > 0) {
-          // Hit end of line (copy all data so far).
-          this.recordBuffer.append(this.line)
-          const sl = this._readLine()
-          if (sl === null) {
-            if (this.r.eof) {
-              this._handleEOF()
-              break
-            }
-            return []
-          }
-          this.line = sl
-          this.fullLine = this.line
-        } else {
-          this._handleEOF()
-          break
-        }
-      } else {
-        if (this.trimLeadingSpace) {
-          this.line = this.line.trimStart()
-        }
-        if (this.line.length === 0 || this.line[0] !== qr) {
-          // Non-quoted string field
-          const i = this.line.indexOf(this.comma)
-          let field = this.line
-          if (i >= 0) {
-            field = field.slice(0, i)
-          } else {
-            field = field.slice(0, field.length - lengthNL(field))
-          }
-          // Check to make sure a quote does not appear in field.
-          if (!this.lazyQuotes) {
-            const j = field.indexOf(qr)
-            if (j >= 0) {
-              const col = this.fullLine.length - (this.line.length - j)
-              throw new ParseError({
-                startLine: this.recLine,
-                line: this.numLine,
-                column: col,
-                err: ParseErrMessage.ErrBareQuote,
-              })
-            }
-          }
-          this.recordBuffer.append(field)
-          this.recordBuffer.demarcateField()
-          if (i >= 0) {
-            this.line = this.line.slice(i + this.commaLen)
-            continue
-          }
-          break
-        } else {
-          // Quoted string field
-          this.parsingQuotedString = true
-          this.line = this.line.slice(quoteLen)
-        }
-      }
-    }
+    if (this._fillRecordBuffer()) return []
 
     return this.recordBuffer.toStringArray(this.recLine)
   }
