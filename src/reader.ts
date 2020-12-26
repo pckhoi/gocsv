@@ -1,8 +1,9 @@
 import SliceReader from './slice_reader'
-import { appendBytesArray, bytesSlice, indexRune, trimLeftFunc } from './byte'
+import { bytesSlice, indexRune, trimLeftFunc } from './byte'
 import { ParseError, ParseErrMessage } from './errors'
 import { isSpace } from './unicode'
 import { decodeRune, runeCount, RuneError, validRune } from './utf8'
+import RecordBuffer from './record_buffer'
 
 /**
  * Called once for each record. If this callback returns `true`
@@ -32,7 +33,7 @@ import { decodeRune, runeCount, RuneError, validRune } from './utf8'
  * leading white space in a field is ignored.
  * This is done even if the field delimiter, Comma, is white space.
  */
-type ReaderConfig = {
+export type ReaderConfig = {
   comma?: string
   comment?: string
   fieldsPerRecord?: number
@@ -81,19 +82,17 @@ export default class Reader {
   comma = 0
   comment = 0
   commaLen = 0
-  fieldsPerRecord = 0
   lazyQuotes = false
   trimLeadingSpace = false
   r: SliceReader
   numLine = 0
   line = new Uint8Array()
   fullLine = new Uint8Array()
-  fieldIndexes: number[] = []
   lastRecord = []
   parsingQuotedString = false
   recLine = 0
   rawBuffer = new Uint8Array()
-  recordBuffer = new Uint8Array()
+  recordBuffer: RecordBuffer
 
   /**
    * Create a new instance of Reader.
@@ -103,7 +102,8 @@ export default class Reader {
    */
   constructor(input: ReadableStream | string | Uint8Array, config?: ReaderConfig) {
     this.r = new SliceReader(input)
-    this.setComma(',')
+    this._setComma(',')
+    let fieldsPerRecord = 0
     if (config) {
       if (config.comma && config.comma.length > 1) {
         throw new Error('invalid config: comma can be one character only')
@@ -112,21 +112,22 @@ export default class Reader {
         throw new Error('invalid config: comment can be one character only')
       }
       if (config.comma) {
-        this.setComma(config.comma)
+        this._setComma(config.comma)
       }
       if (config.comment) {
-        this.setComment(config.comment)
+        this._setComment(config.comment)
       }
-      this.fieldsPerRecord = config.fieldsPerRecord || this.fieldsPerRecord
+      fieldsPerRecord = config.fieldsPerRecord || fieldsPerRecord
       this.lazyQuotes = config.lazyQuotes || this.lazyQuotes
       this.trimLeadingSpace = config.trimLeadingSpace || this.trimLeadingSpace
     }
+    this.recordBuffer = new RecordBuffer(fieldsPerRecord)
   }
 
   /**
    * @ignore
    */
-  setComma(cstr: string): void {
+  private _setComma(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
     this.comma = res[0]
@@ -136,7 +137,7 @@ export default class Reader {
   /**
    * @ignore
    */
-  setComment(cstr: string): void {
+  private _setComment(cstr: string): void {
     const b = new TextEncoder().encode(cstr)
     const res = decodeRune(b)
     this.comment = res[0]
@@ -186,7 +187,7 @@ export default class Reader {
         err: ParseErrMessage.ErrQuote,
       })
     }
-    this.fieldIndexes.push(this.recordBuffer.length)
+    this.recordBuffer.demarcateField()
     this.parsingQuotedString = false
   }
 
@@ -228,8 +229,7 @@ export default class Reader {
     const quoteLen = 1
     const qr = '"'.charCodeAt(0)
     if (!this.parsingQuotedString) {
-      this.recordBuffer = new Uint8Array(0)
-      this.fieldIndexes = []
+      this.recordBuffer.reset()
       this.recLine = this.numLine // Starting line for record
     }
     while (true) {
@@ -237,28 +237,28 @@ export default class Reader {
         const i = this.line.indexOf(qr)
         if (i >= 0) {
           // Hit next quote.
-          this.recordBuffer = appendBytesArray(this.recordBuffer, bytesSlice(this.line, 0, i))
+          this.recordBuffer.append(bytesSlice(this.line, 0, i))
           this.line = bytesSlice(this.line, i + quoteLen)
           const rn = nextRune(this.line)
 
           if (rn === qr) {
             // `""` sequence (append quote).
-            this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
+            this.recordBuffer.append(new Uint8Array([qr]))
             this.line = bytesSlice(this.line, quoteLen)
           } else if (rn === this.comma) {
             // `",` sequence (end of field).
             this.line = bytesSlice(this.line, this.commaLen)
-            this.fieldIndexes.push(this.recordBuffer.length)
+            this.recordBuffer.demarcateField()
             this.parsingQuotedString = false
             continue
           } else if (lengthNL(this.line) === this.line.length) {
             // `"\n` sequence (end of line).
-            this.fieldIndexes.push(this.recordBuffer.length)
+            this.recordBuffer.demarcateField()
             this.parsingQuotedString = false
             break
           } else if (this.lazyQuotes) {
             // `"` sequence (bare quote).
-            this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
+            this.recordBuffer.append(new Uint8Array([qr]))
           } else {
             // `"*` sequence (invalid non-escaped quote).
             const col = runeCount(
@@ -273,7 +273,7 @@ export default class Reader {
           }
         } else if (this.line.length > 0) {
           // Hit end of line (copy all data so far).
-          this.recordBuffer = appendBytesArray(this.recordBuffer, this.line)
+          this.recordBuffer.append(this.line)
           const sl = this._readLine()
           if (sl === null) {
             if (this.r.eof) {
@@ -316,8 +316,8 @@ export default class Reader {
               })
             }
           }
-          this.recordBuffer = appendBytesArray(this.recordBuffer, field)
-          this.fieldIndexes.push(this.recordBuffer.length)
+          this.recordBuffer.append(field)
+          this.recordBuffer.demarcateField()
           if (i >= 0) {
             this.line = bytesSlice(this.line, i + this.commaLen)
             continue
@@ -331,33 +331,7 @@ export default class Reader {
       }
     }
 
-    if (!dst) {
-      dst = []
-    }
-    if (dst.length > this.fieldIndexes.length) {
-      dst = dst.slice(0, this.fieldIndexes.length)
-    }
-    let preIdx = 0
-    const decoder = new TextDecoder()
-    for (let i = 0; i < this.fieldIndexes.length; i++) {
-      const idx = this.fieldIndexes[i]
-      dst[i] = decoder.decode(bytesSlice(this.recordBuffer, preIdx, idx))
-      preIdx = idx
-    }
-
-    // Check or update the expected fields per record.
-    if (this.fieldsPerRecord > 0) {
-      if (dst.length !== this.fieldsPerRecord) {
-        throw new ParseError({
-          startLine: this.recLine,
-          line: this.recLine,
-          err: ParseErrMessage.ErrFieldCount,
-        })
-      }
-    } else if (this.fieldsPerRecord === 0) {
-      this.fieldsPerRecord = dst.length
-    }
-    return dst
+    return this.recordBuffer.toStringArray(this.recLine, dst)
   }
 
   /**

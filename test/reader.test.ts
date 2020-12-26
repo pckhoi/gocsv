@@ -1,5 +1,5 @@
 import { ParseErrMessage, ParseError } from '../src/errors'
-import Reader, { errInvalidDelim } from '../src/reader'
+import Reader, { errInvalidDelim, ReaderConfig } from '../src/reader'
 import { RuneError } from '../src/utf8'
 import { stringStream } from '../src/io'
 
@@ -464,22 +464,22 @@ x,,,
 
   for (const tt of tests) {
     it(`should handle ${tt.name}`, async () => {
-      const r = new Reader(stringStream(tt.input))
-
+      const config: ReaderConfig = {}
       if (tt.comma) {
-        r.setComma(tt.comma)
+        config.comma = tt.comma
       }
       if (tt.comment) {
-        r.setComment(tt.comment)
+        config.comment = tt.comment
       }
       if (tt.useFieldsPerRecord) {
-        r.fieldsPerRecord = tt.fieldsPerRecord || 0
+        config.fieldsPerRecord = tt.fieldsPerRecord || 0
       } else {
-        r.fieldsPerRecord = -1
+        config.fieldsPerRecord = -1
       }
-      r.lazyQuotes = tt.lazyQuotes || false
-      r.trimLeadingSpace = tt.trimLeadingSpace || false
+      config.lazyQuotes = tt.lazyQuotes || false
+      config.trimLeadingSpace = tt.trimLeadingSpace || false
 
+      const r = new Reader(stringStream(tt.input), config)
       try {
         const out: string[][] = []
         await r.readAll(rec => {
