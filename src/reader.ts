@@ -1,8 +1,6 @@
 import SliceReader from './slice_reader'
-import { bytesSlice, indexRune, trimLeftFunc } from './byte'
 import { ParseError, ParseErrMessage } from './errors'
-import { isSpace } from './unicode'
-import { decodeRune, runeCount, RuneError, validRune } from './utf8'
+import { RuneError, validRune } from './utf8'
 import RecordBuffer from './record_buffer'
 
 /**
@@ -49,45 +47,32 @@ class ReaderError extends Error {
 
 export const errInvalidDelim = new ReaderError('invalid field or comment delimiter')
 
-const validDelim = (r: number) => {
-  return (
-    r !== 0 &&
-    r !== '"'.charCodeAt(0) &&
-    r !== '\r'.charCodeAt(0) &&
-    r !== '\n'.charCodeAt(0) &&
-    validRune(r) &&
-    r !== RuneError
-  )
+const validDelim = (s: string) => {
+  const r = s.charCodeAt(0)
+  return r !== 0 && s !== '"' && s !== '\r' && s !== '\n' && validRune(r) && r !== RuneError
 }
 
 // lengthNL reports the number of bytes for the trailing \n.
-const lengthNL = (b?: Uint8Array) => {
-  if (b && b.length > 0 && b[b.length - 1] === '\n'.charCodeAt(0)) {
+const lengthNL = (b?: string) => {
+  if (b && b.length > 0 && b[b.length - 1] === '\n') {
     return 1
   }
   return 0
-}
-
-// nextRune returns the next rune in b or utf8.RuneError.
-const nextRune = (b?: Uint8Array) => {
-  if (!b) return 0
-  const [r, _] = decodeRune(b)
-  return r
 }
 
 /**
  * @class
  */
 export default class Reader {
-  comma = 0
-  comment = 0
+  comma = ','
+  comment = ''
   commaLen = 0
   lazyQuotes = false
   trimLeadingSpace = false
   r: SliceReader
   numLine = 0
-  line = new Uint8Array()
-  fullLine = new Uint8Array()
+  line = ''
+  fullLine = ''
   lastRecord = []
   parsingQuotedString = false
   recLine = 0
@@ -128,40 +113,33 @@ export default class Reader {
    * @ignore
    */
   private _setComma(cstr: string): void {
-    const b = new TextEncoder().encode(cstr)
-    const res = decodeRune(b)
-    this.comma = res[0]
-    this.commaLen = res[1]
+    this.comma = cstr
+    this.commaLen = cstr.length
   }
 
   /**
    * @ignore
    */
   private _setComment(cstr: string): void {
-    const b = new TextEncoder().encode(cstr)
-    const res = decodeRune(b)
-    this.comment = res[0]
+    this.comment = cstr
   }
 
-  private _readLine(): Uint8Array | null {
-    const nl = '\n'.charCodeAt(0)
-    const cr = '\r'.charCodeAt(0)
-    const sl = this.r.readSlice(nl)
+  private _readLine(): string | null {
+    const sl = this.r.readSlice('\n')
     if (sl === null) return sl
-    let line = sl as Uint8Array
+    let line = sl as string
 
     if (line.length > 0 && this.r.eof) {
       // For backwards compatibility, drop trailing \r before EOF.
-      if (line[line.length - 1] === '\r'.charCodeAt(0)) {
-        line = new Uint8Array(line.buffer, line.byteOffset, line.length - 1)
+      if (line[line.length - 1] === '\r') {
+        line = line.slice(0, line.length - 1)
       }
     }
     this.numLine++
     // Normalize \r\n to \n on all input lines.
     const n = line.length
-    if (n >= 2 && line[n - 2] === cr && line[n - 1] === nl) {
-      line[n - 2] = nl
-      line = new Uint8Array(line.buffer, line.byteOffset, n - 1)
+    if (n >= 2 && line[n - 2] === '\r' && line[n - 1] === '\n') {
+      line = line.slice(0, n - 2) + '\n'
     }
     return line
   }
@@ -170,7 +148,7 @@ export default class Reader {
     if (
       this.comma === this.comment ||
       !validDelim(this.comma) ||
-      (this.comment !== 0 && !validDelim(this.comment))
+      (this.comment !== '' && !validDelim(this.comment))
     ) {
       throw errInvalidDelim
     }
@@ -179,7 +157,7 @@ export default class Reader {
   private _handleEOF(): void {
     // Abrupt end of file (EOF or error).
     if (!this.lazyQuotes) {
-      const col = runeCount(this.fullLine)
+      const col = this.fullLine.length
       throw new ParseError({
         startLine: this.recLine,
         line: this.numLine,
@@ -191,7 +169,7 @@ export default class Reader {
     this.parsingQuotedString = false
   }
 
-  private _readRecord(dst?: string[]): string[] {
+  private _readRecord(): string[] {
     this._validateCommaComment()
 
     // Read line (automatically skipping past empty lines and any comments).
@@ -203,18 +181,18 @@ export default class Reader {
       this.line = sl
       this.fullLine = this.line
     } else {
-      this.line = new Uint8Array()
-      this.fullLine = new Uint8Array()
+      this.line = ''
+      this.fullLine = ''
       while (true) {
         const sl = this._readLine()
         if (sl === null) return []
         this.line = sl
-        if (this.comment !== 0 && nextRune(this.line) === this.comment) {
-          this.line = new Uint8Array()
+        if (this.comment !== '' && this.line[0] === this.comment) {
+          this.line = ''
           continue // Skip comment lines
         }
         if (this.line.length > 0 && this.line.length === lengthNL(this.line)) {
-          this.line = new Uint8Array()
+          this.line = ''
           continue // Skip empty lines
         }
         this.fullLine = this.line
@@ -227,7 +205,7 @@ export default class Reader {
 
     // Parse each field in the record.
     const quoteLen = 1
-    const qr = '"'.charCodeAt(0)
+    const qr = '"'
     if (!this.parsingQuotedString) {
       this.recordBuffer.reset()
       this.recLine = this.numLine // Starting line for record
@@ -237,17 +215,17 @@ export default class Reader {
         const i = this.line.indexOf(qr)
         if (i >= 0) {
           // Hit next quote.
-          this.recordBuffer.append(bytesSlice(this.line, 0, i))
-          this.line = bytesSlice(this.line, i + quoteLen)
-          const rn = nextRune(this.line)
+          this.recordBuffer.append(this.line.slice(0, i))
+          this.line = this.line.slice(i + quoteLen)
+          const rn = this.line[0]
 
           if (rn === qr) {
             // `""` sequence (append quote).
-            this.recordBuffer.append(new Uint8Array([qr]))
-            this.line = bytesSlice(this.line, quoteLen)
+            this.recordBuffer.append(qr)
+            this.line = this.line.slice(quoteLen)
           } else if (rn === this.comma) {
             // `",` sequence (end of field).
-            this.line = bytesSlice(this.line, this.commaLen)
+            this.line = this.line.slice(this.commaLen)
             this.recordBuffer.demarcateField()
             this.parsingQuotedString = false
             continue
@@ -258,12 +236,10 @@ export default class Reader {
             break
           } else if (this.lazyQuotes) {
             // `"` sequence (bare quote).
-            this.recordBuffer.append(new Uint8Array([qr]))
+            this.recordBuffer.append(qr)
           } else {
             // `"*` sequence (invalid non-escaped quote).
-            const col = runeCount(
-              bytesSlice(this.fullLine, 0, this.fullLine.length - this.line.length - quoteLen)
-            )
+            const col = this.fullLine.length - this.line.length - quoteLen
             throw new ParseError({
               startLine: this.recLine,
               line: this.numLine,
@@ -290,24 +266,22 @@ export default class Reader {
         }
       } else {
         if (this.trimLeadingSpace) {
-          this.line = trimLeftFunc(this.line, isSpace)
+          this.line = this.line.trimStart()
         }
         if (this.line.length === 0 || this.line[0] !== qr) {
           // Non-quoted string field
-          const i = indexRune(this.line, this.comma)
+          const i = this.line.indexOf(this.comma)
           let field = this.line
           if (i >= 0) {
-            field = bytesSlice(field, 0, i)
+            field = field.slice(0, i)
           } else {
-            field = bytesSlice(field, 0, field.length - lengthNL(field))
+            field = field.slice(0, field.length - lengthNL(field))
           }
           // Check to make sure a quote does not appear in field.
           if (!this.lazyQuotes) {
             const j = field.indexOf(qr)
             if (j >= 0) {
-              const col = runeCount(
-                bytesSlice(this.fullLine, 0, this.fullLine.length - bytesSlice(this.line, j).length)
-              )
+              const col = this.fullLine.length - (this.line.length - j)
               throw new ParseError({
                 startLine: this.recLine,
                 line: this.numLine,
@@ -319,19 +293,19 @@ export default class Reader {
           this.recordBuffer.append(field)
           this.recordBuffer.demarcateField()
           if (i >= 0) {
-            this.line = bytesSlice(this.line, i + this.commaLen)
+            this.line = this.line.slice(i + this.commaLen)
             continue
           }
           break
         } else {
           // Quoted string field
           this.parsingQuotedString = true
-          this.line = bytesSlice(this.line, quoteLen)
+          this.line = this.line.slice(quoteLen)
         }
       }
     }
 
-    return this.recordBuffer.toStringArray(this.recLine, dst)
+    return this.recordBuffer.toStringArray(this.recLine)
   }
 
   /**

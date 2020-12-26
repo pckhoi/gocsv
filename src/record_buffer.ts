@@ -1,4 +1,3 @@
-import { bytesSlice } from './byte'
 import { ParseErrMessage, ParseError } from './errors'
 
 export default class RecordBuffer {
@@ -6,57 +5,42 @@ export default class RecordBuffer {
   writeIdx = 0
   fieldIndexes: number[] = []
   fieldsPerRecord: number
+  fieldBuffer: string[] = []
+  fields: string[] = []
 
   constructor(fieldsPerRecord = 0) {
     this.fieldsPerRecord = fieldsPerRecord
   }
 
-  private _growArray(len: number): void {
-    const oldLen = this.array.length
-    if (oldLen >= len) return
-    let newLen = oldLen
-    while (newLen < len) {
-      newLen *= 2
-    }
-    const newBuffer = new Uint8Array(newLen)
-    newBuffer.set(this.array)
-    this.array = newBuffer
-  }
-
-  append(sl: Uint8Array): void {
-    const n = sl.length
-    this._growArray(this.writeIdx + n)
-    this.array.set(sl, this.writeIdx)
-    this.writeIdx += n
+  append(s: string): void {
+    this.fieldBuffer.push(s)
   }
 
   reset(): void {
+    if (this.fieldsPerRecord > 0) {
+      this.fields = Array(this.fieldsPerRecord)
+    } else {
+      this.fields = []
+    }
+    this.fieldBuffer = []
     this.writeIdx = 0
-    this.fieldIndexes = []
   }
 
   demarcateField(): void {
-    this.fieldIndexes.push(this.writeIdx)
+    const s = this.fieldBuffer.join('')
+    if (this.fieldsPerRecord > 0) {
+      this.fields[this.writeIdx] = s
+    } else {
+      this.fields.push(s)
+    }
+    this.writeIdx++
+    this.fieldBuffer = []
   }
 
-  toStringArray(recLine: number, dst?: string[]): string[] {
-    if (!dst) {
-      dst = []
-    }
-    if (dst.length > this.fieldIndexes.length) {
-      dst = dst.slice(0, this.fieldIndexes.length)
-    }
-    let preIdx = 0
-    const decoder = new TextDecoder()
-    for (let i = 0; i < this.fieldIndexes.length; i++) {
-      const idx = this.fieldIndexes[i]
-      dst[i] = decoder.decode(bytesSlice(this.array, preIdx, idx))
-      preIdx = idx
-    }
-
+  toStringArray(recLine: number): string[] {
     // Check or update the expected fields per record.
     if (this.fieldsPerRecord > 0) {
-      if (dst.length !== this.fieldsPerRecord) {
+      if (this.writeIdx !== this.fieldsPerRecord) {
         throw new ParseError({
           startLine: recLine,
           line: recLine,
@@ -64,8 +48,8 @@ export default class RecordBuffer {
         })
       }
     } else if (this.fieldsPerRecord === 0) {
-      this.fieldsPerRecord = dst.length
+      this.fieldsPerRecord = this.writeIdx
     }
-    return dst
+    return this.fields
   }
 }

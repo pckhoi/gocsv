@@ -1,4 +1,3 @@
-import { bytes } from './byte'
 import { LineReaderError } from './errors'
 
 const maxConsecutiveEmptyReads = 100
@@ -7,8 +6,10 @@ const isReadableStream = (s: any): s is ReadableStream => {
   return typeof s.getReader === 'function'
 }
 
+const decoder = new TextDecoder()
+
 export default class SliceReader {
-  buf = new ArrayBuffer(0)
+  buf = ''
   rd?: ReadableStream // reader provided by the client
   r = 0 // buf read position
   eof = false
@@ -17,10 +18,10 @@ export default class SliceReader {
     if (isReadableStream(source)) {
       this.rd = source
     } else if (typeof source === 'string') {
-      this.buf = new TextEncoder().encode(source).buffer
+      this.buf = source
       this.eof = true
     } else {
-      this.buf = source.buffer
+      this.buf = decoder.decode(source)
       this.eof = true
     }
   }
@@ -28,13 +29,11 @@ export default class SliceReader {
   async fill(): Promise<void> {
     if (!this.rd) return
 
-    const existingLen = this.buf.byteLength - this.r
-
     const reader = this.rd.getReader()
 
     // Read new data: try a limited number of times.
     for (let i = maxConsecutiveEmptyReads; i > 0; i--) {
-      let bArr: Uint8Array
+      let newStr: string
       const { done, value } = await reader.read()
       if (done) {
         reader.releaseLock()
@@ -42,19 +41,16 @@ export default class SliceReader {
         return
       }
       if (typeof value === 'string') {
-        bArr = bytes(value)
+        newStr = value
       } else if (value instanceof Uint8Array) {
-        bArr = value
+        newStr = decoder.decode(value)
       } else {
         reader.releaseLock()
         throw new LineReaderError(`unhandled value type "${typeof value}"`)
       }
 
-      const n = bArr.length
-      const newBytesArray = new Uint8Array(n + existingLen)
-      newBytesArray.set(new Uint8Array(this.buf, this.r))
-      newBytesArray.set(bArr, existingLen)
-      this.buf = newBytesArray.buffer
+      const n = newStr.length
+      this.buf = this.buf.slice(this.r) + newStr
       this.r = 0
       if (n > 0) {
         reader.releaseLock()
@@ -64,20 +60,21 @@ export default class SliceReader {
     throw new LineReaderError('no progress')
   }
 
-  readSlice(delim: number): Uint8Array | null {
+  readSlice(delim: string): string | null {
     // Search buffer.
-    const view = new Uint8Array(this.buf, this.r)
-    const n = view.length
-    if (n === 0) {
+    const n = this.buf.length
+    if (n === this.r) {
       return null
     }
-    const i = view.indexOf(delim)
+    const i = this.buf.slice(this.r).indexOf(delim)
     if (i >= 0) {
+      const line = this.buf.slice(this.r, this.r + i + 1)
       this.r += i + 1
-      return new Uint8Array(view.buffer, view.byteOffset, i + 1)
+      return line
     } else if (this.eof) {
-      this.r += view.length
-      return view
+      const line = this.buf.slice(this.r)
+      this.r = n
+      return line
     }
     return null
   }
