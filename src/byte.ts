@@ -5,7 +5,7 @@ import {
   RuneError,
   RuneSelf,
   UTFMax,
-  validRune
+  validRune,
 } from './utf8'
 
 export const bytes = (s: string) => {
@@ -311,4 +311,12 @@ export const bytesArray = (n: number) => {
     a.unshift(n & 255)
   }
   return new Uint8Array(a)
+}
+
+export const bytesSlice = (a: Uint8Array, start: number, end?: number): Uint8Array => {
+  return new Uint8Array(
+    a.buffer,
+    a.byteOffset + start,
+    end === undefined ? a.byteLength - start : end - start
+  )
 }

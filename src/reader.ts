@@ -1,5 +1,5 @@
 import SliceReader from './slice_reader'
-import { appendBytesArray, indexRune, trimLeftFunc } from './byte'
+import { appendBytesArray, bytesSlice, indexRune, trimLeftFunc } from './byte'
 import { ParseError, ParseErrMessage } from './errors'
 import { isSpace } from './unicode'
 import { decodeRune, runeCount, RuneError, validRune } from './utf8'
@@ -152,7 +152,7 @@ export default class Reader {
     if (line.length > 0 && this.r.eof) {
       // For backwards compatibility, drop trailing \r before EOF.
       if (line[line.length - 1] === '\r'.charCodeAt(0)) {
-        line = line.slice(0, line.length - 1)
+        line = new Uint8Array(line.buffer, line.byteOffset, line.length - 1)
       }
     }
     this.numLine++
@@ -160,7 +160,7 @@ export default class Reader {
     const n = line.length
     if (n >= 2 && line[n - 2] === cr && line[n - 1] === nl) {
       line[n - 2] = nl
-      line = line.slice(0, n - 1)
+      line = new Uint8Array(line.buffer, line.byteOffset, n - 1)
     }
     return line
   }
@@ -202,18 +202,18 @@ export default class Reader {
       this.line = sl
       this.fullLine = this.line
     } else {
-      this.line = this.line.slice(0, 0)
-      this.fullLine = this.fullLine.slice(0, 0)
+      this.line = new Uint8Array()
+      this.fullLine = new Uint8Array()
       while (true) {
         const sl = this._readLine()
         if (sl === null) return []
         this.line = sl
         if (this.comment !== 0 && nextRune(this.line) === this.comment) {
-          this.line = this.line.slice(0, 0)
+          this.line = new Uint8Array()
           continue // Skip comment lines
         }
         if (this.line.length > 0 && this.line.length === lengthNL(this.line)) {
-          this.line = this.line.slice(0, 0)
+          this.line = new Uint8Array()
           continue // Skip empty lines
         }
         this.fullLine = this.line
@@ -228,8 +228,8 @@ export default class Reader {
     const quoteLen = 1
     const qr = '"'.charCodeAt(0)
     if (!this.parsingQuotedString) {
-      this.recordBuffer = this.recordBuffer.slice(0, 0)
-      this.fieldIndexes = this.fieldIndexes.slice(0, 0)
+      this.recordBuffer = new Uint8Array(0)
+      this.fieldIndexes = []
       this.recLine = this.numLine // Starting line for record
     }
     while (true) {
@@ -237,17 +237,17 @@ export default class Reader {
         const i = this.line.indexOf(qr)
         if (i >= 0) {
           // Hit next quote.
-          this.recordBuffer = appendBytesArray(this.recordBuffer, this.line.slice(0, i))
-          this.line = this.line.slice(i + quoteLen)
+          this.recordBuffer = appendBytesArray(this.recordBuffer, bytesSlice(this.line, 0, i))
+          this.line = bytesSlice(this.line, i + quoteLen)
           const rn = nextRune(this.line)
 
           if (rn === qr) {
             // `""` sequence (append quote).
             this.recordBuffer = appendBytesArray(this.recordBuffer, new Uint8Array([qr]))
-            this.line = this.line.slice(quoteLen)
+            this.line = bytesSlice(this.line, quoteLen)
           } else if (rn === this.comma) {
             // `",` sequence (end of field).
-            this.line = this.line.slice(this.commaLen)
+            this.line = bytesSlice(this.line, this.commaLen)
             this.fieldIndexes.push(this.recordBuffer.length)
             this.parsingQuotedString = false
             continue
@@ -262,7 +262,7 @@ export default class Reader {
           } else {
             // `"*` sequence (invalid non-escaped quote).
             const col = runeCount(
-              this.fullLine.slice(0, this.fullLine.length - this.line.length - quoteLen)
+              bytesSlice(this.fullLine, 0, this.fullLine.length - this.line.length - quoteLen)
             )
             throw new ParseError({
               startLine: this.recLine,
@@ -297,16 +297,16 @@ export default class Reader {
           const i = indexRune(this.line, this.comma)
           let field = this.line
           if (i >= 0) {
-            field = field.slice(0, i)
+            field = bytesSlice(field, 0, i)
           } else {
-            field = field.slice(0, field.length - lengthNL(field))
+            field = bytesSlice(field, 0, field.length - lengthNL(field))
           }
           // Check to make sure a quote does not appear in field.
           if (!this.lazyQuotes) {
             const j = field.indexOf(qr)
             if (j >= 0) {
               const col = runeCount(
-                this.fullLine.slice(0, this.fullLine.length - this.line.slice(j).length)
+                bytesSlice(this.fullLine, 0, this.fullLine.length - bytesSlice(this.line, j).length)
               )
               throw new ParseError({
                 startLine: this.recLine,
@@ -319,14 +319,14 @@ export default class Reader {
           this.recordBuffer = appendBytesArray(this.recordBuffer, field)
           this.fieldIndexes.push(this.recordBuffer.length)
           if (i >= 0) {
-            this.line = this.line.slice(i + this.commaLen)
+            this.line = bytesSlice(this.line, i + this.commaLen)
             continue
           }
           break
         } else {
           // Quoted string field
           this.parsingQuotedString = true
-          this.line = this.line.slice(quoteLen)
+          this.line = bytesSlice(this.line, quoteLen)
         }
       }
     }
@@ -341,7 +341,7 @@ export default class Reader {
     const decoder = new TextDecoder()
     for (let i = 0; i < this.fieldIndexes.length; i++) {
       const idx = this.fieldIndexes[i]
-      dst[i] = decoder.decode(this.recordBuffer.slice(preIdx, idx))
+      dst[i] = decoder.decode(bytesSlice(this.recordBuffer, preIdx, idx))
       preIdx = idx
     }
 

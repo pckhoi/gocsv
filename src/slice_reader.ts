@@ -74,7 +74,7 @@ export default class SliceReader {
     const i = view.indexOf(delim)
     if (i >= 0) {
       this.r += i + 1
-      return view.slice(0, i + 1)
+      return new Uint8Array(view.buffer, view.byteOffset, i + 1)
     } else if (this.eof) {
       this.r += view.length
       return view
