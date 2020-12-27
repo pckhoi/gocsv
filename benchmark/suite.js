@@ -1,9 +1,7 @@
 /* global eprint, eprintKill */
 
-import Papa from 'papaparse'
-
 import Benchmark from './benchmark'
-import Reader from '../src/reader'
+import Reader from '../src/reader.ts'
 import csvBase64 from './players_20.csv'
 import { base64ToArrayBuffer, timeExecution } from './utils'
 
@@ -54,20 +52,6 @@ suite
         throw new Error(`unexpected number of rows ${i}`)
       }
     })
-    await timeExecution(
-      'Read players_20.csv with PapaParse',
-      () =>
-        new Promise(resolve => {
-          Papa.parse(file, {
-            complete: results => {
-              if (results.data.length !== 18280) {
-                throw new Error(`unexpected number of rows ${results.data.length}`)
-              }
-              resolve()
-            },
-          })
-        })
-    )
     eprintKill()
   })
   .run({

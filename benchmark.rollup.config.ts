@@ -2,7 +2,6 @@ import resolve from 'rollup-plugin-node-resolve'
 import commonjs from 'rollup-plugin-commonjs'
 import typescript from 'rollup-plugin-typescript2'
 import json from 'rollup-plugin-json'
-import builtins from 'rollup-plugin-node-builtins'
 import { base64 } from 'rollup-plugin-base64'
 
 export default {
@@ -13,8 +12,8 @@ export default {
       format: 'iife',
       name: 'csvjsBenchmark',
       // <<<<<< adds this line into the bundle.js >>>>>>>  const global = window;
-      intro: 'const global = window;'
-    }
+      intro: 'const global = window;',
+    },
   ],
   // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
   external: [],
@@ -29,7 +28,6 @@ export default {
     // which external modules to include in the bundle
     // https://github.com/rollup/rollup-plugin-node-resolve#usage
     resolve(),
-    builtins(),
-    base64({ include: '**/*.csv' })
-  ]
+    base64({ include: '**/*.csv' }),
+  ],
 }

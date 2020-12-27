@@ -1,2 +1,13 @@
-dist/benchmark.js
-dist/lib/benchmark
+benchmark
+coverage
+src
+test
+tools
+.editorconfig
+.eslintrc
+.travis.yml
+benchmark.rollup.config.ts
+code-of-conduct.md
+CONTRIBUTING.md
+rollup.config.ts
+tsconfig.json
