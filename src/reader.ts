@@ -43,7 +43,7 @@ export type ReaderConfig = {
   trimLeadingSpace?: boolean
 }
 
-class ReaderError extends Error {
+export class ReaderError extends Error {
   constructor(message: string) {
     super(`csv.Reader: ${message}`)
   }

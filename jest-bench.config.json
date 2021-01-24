@@ -1,0 +1,15 @@
+{
+  "transform": {
+    ".(ts|tsx)": "ts-jest"
+  },
+  "verbose": false,
+  "runner": "jest-electron/runner",
+  "moduleFileExtensions": ["ts", "tsx", "js"],
+  "testEnvironment": "jest-bench/environment",
+  "testEnvironmentOptions": {
+    "testEnvironment": "jest-electron/environment",
+    "testEnvironmentOptions": {}
+  },
+  "reporters": ["default", "jest-bench/reporter"],
+  "testRegex": "(/__benchmarks__/.*|\\.bench)\\.(ts|tsx|js)$"
+}
