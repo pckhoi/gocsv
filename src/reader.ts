@@ -356,4 +356,18 @@ export default class Reader {
       }
     } while (!this.r.eof)
   }
+
+  /**
+   * Read at most N records.
+   * @param {int} n - Maximum number of records to read.
+   * @param {Reader~recordCallback} cb - The callback to be called with each record.
+   * @returns {Promise} Resolve when there's no record left or the maximum number of records have been reached.
+   */
+  async readN(n: number, cb: (record: string[]) => boolean | void): Promise<void> {
+    let i = n
+    return this.readAll((record: string[]) => {
+      if (cb(record)) return true
+      if (--i <= 0) return true
+    })
+  }
 }

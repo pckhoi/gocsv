@@ -494,4 +494,53 @@ x,,,
       }
     })
   }
+
+  describe('readN', () => {
+    it.each([
+      [
+        'limit rows read',
+        'a,b\n1,c\n2,d\n3,e',
+        2,
+        [
+          ['a', 'b'],
+          ['1', 'c'],
+        ],
+      ],
+      [
+        'read as much as it could',
+        'a,b\n1,c\n2,d\n3,e',
+        10,
+        [
+          ['a', 'b'],
+          ['1', 'c'],
+          ['2', 'd'],
+          ['3', 'e'],
+        ],
+      ],
+    ])('%s', async (name: string, input: string, n: number, output: string[][]) => {
+      const r = new Reader(input)
+      const out: string[][] = []
+      await r.readN(n, rec => {
+        out.push(rec)
+      })
+      expect(out).toEqual(output)
+    })
+
+    it('resumes where it left off', async () => {
+      const r = new Reader('a,b\n1,c\n2,d\n3,e')
+      const out: string[][] = []
+      await r.readN(2, rec => {
+        out.push(rec)
+      })
+      await r.readN(2, rec => {
+        out.push(rec)
+      })
+      expect(out).toEqual([
+        ['a', 'b'],
+        ['1', 'c'],
+        ['2', 'd'],
+        ['3', 'e'],
+      ])
+    })
+  })
 })
