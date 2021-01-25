@@ -1,5 +1,5 @@
 import { ParseErrMessage, ParseError } from '../src/errors'
-import Reader, { errInvalidDelim, ReaderConfig } from '../src/reader'
+import Reader, { errInvalidDelim, readerConfig } from '../src/reader'
 import { RuneError } from '../src/utf8'
 
 type testcase = {
@@ -463,7 +463,7 @@ x,,,
 
   for (const tt of tests) {
     it(`should handle ${tt.name}`, async () => {
-      const config: ReaderConfig = {}
+      const config: readerConfig = {}
       if (tt.comma) {
         config.comma = tt.comma
       }

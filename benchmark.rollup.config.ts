@@ -10,7 +10,7 @@ export default {
     {
       file: 'dist/benchmark.js',
       format: 'iife',
-      name: 'csvjsBenchmark',
+      name: 'gocsvBenchmark',
       // <<<<<< adds this line into the bundle.js >>>>>>>  const global = window;
       intro: 'const global = window;',
     },

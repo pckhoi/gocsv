@@ -1,4 +1,4 @@
-import { LineReaderError } from './errors'
+import { ReaderError } from './errors'
 
 const maxConsecutiveEmptyReads = 100
 
@@ -10,11 +10,11 @@ const decoder = new TextDecoder()
 
 export default class SliceReader {
   buf = ''
-  rd?: ReadableStream // reader provided by the client
+  rd?: ReadableStream<string> | ReadableStream<Uint8Array> // reader provided by the client
   r = 0 // buf read position
   eof = false
 
-  constructor(source: ReadableStream | string | Uint8Array) {
+  constructor(source: ReadableStream<string> | ReadableStream<Uint8Array> | string | Uint8Array) {
     if (isReadableStream(source)) {
       this.rd = source
     } else if (typeof source === 'string') {
@@ -46,7 +46,7 @@ export default class SliceReader {
         newStr = decoder.decode(value)
       } else {
         reader.releaseLock()
-        throw new LineReaderError(`unhandled value type "${typeof value}"`)
+        throw new ReaderError(`unhandled stream result value type "${typeof value}"`)
       }
 
       const n = newStr.length
@@ -57,7 +57,7 @@ export default class SliceReader {
         return
       }
     }
-    throw new LineReaderError('no progress')
+    throw new ReaderError('no progress')
   }
 
   readSlice(delim: string): string | null {

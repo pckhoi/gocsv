@@ -1,3 +1,13 @@
+/**
+ * Common error class for anything that might go wrong with Reader
+ */
+export class ReaderError extends Error {
+  constructor(message: string) {
+    super(`csv.Reader: ${message}`)
+    Object.setPrototypeOf(this, ReaderError.prototype)
+  }
+}
+
 type ParseErrorArgs = {
   startLine: number
   line: number
@@ -9,10 +19,13 @@ export enum ParseErrMessage {
   ErrTrailingComma = 'extra delimiter at end of line',
   ErrBareQuote = 'bare " in non-quoted-field',
   ErrQuote = 'extraneous or missing " in quoted-field',
-  ErrFieldCount = 'wrong number of fields'
+  ErrFieldCount = 'wrong number of fields',
 }
 
-export class ParseError extends Error {
+/**
+ * Common error class for parse errors
+ */
+export class ParseError extends ReaderError {
   constructor(args: ParseErrorArgs) {
     if (args.err === ParseErrMessage.ErrFieldCount) {
       super(`record on line ${args.line}: ${args.err}`)
@@ -28,10 +41,3 @@ export class ParseError extends Error {
 }
 
 export class EOF extends Error {}
-
-export class LineReaderError extends Error {
-  constructor(val: number | string) {
-    super(`key not found: ${val}`)
-    Object.setPrototypeOf(this, LineReaderError.prototype)
-  }
-}

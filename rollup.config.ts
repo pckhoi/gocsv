@@ -7,7 +7,7 @@ import json from 'rollup-plugin-json'
 
 import pkg from './package.json'
 
-const libraryName = 'csvjs'
+const libraryName = 'gocsv'
 
 export default {
   input: `src/${libraryName}.ts`,

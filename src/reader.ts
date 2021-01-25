@@ -1,5 +1,5 @@
 import SliceReader from './slice_reader'
-import { ParseError, ParseErrMessage } from './errors'
+import { ReaderError, ParseError, ParseErrMessage } from './errors'
 import { RuneError, validRune } from './utf8'
 import RecordBuffer from './record_buffer'
 
@@ -8,46 +8,56 @@ const isStringArray = (s: any): s is string[] => {
 }
 
 /**
- * Called once for each record. If this callback returns `true`
- * then abort reading prematurely.
- * @typedef {Object} ReaderConfig
- * @property {string|undefined} comma - The field delimiter.
- * It is set to comma (',') by NewReader.
- * Comma must be a valid rune and must not be \r, \n,
- * or the Unicode replacement character (0xFFFD).
- * @property {string|undefined} comment - Comment, if not 0, is the comment character.
- * Lines beginning with the comment character without preceding whitespace are ignored.
- * With leading whitespace the comment character becomes part of the
- * field, even if {@link ReaderConfig#trimLeadingSpace} is true.
- * Comment must be a valid rune and must not be \r, \n,
- * or the Unicode replacement character (0xFFFD).
- * It must also not be equal to {@link ReaderConfig#comma}.
- * @property {number|undefined} fieldsPerRecord - The number of expected fields per record.
- * If fieldsPerRecord is positive, Read requires each record to
- * have the given number of fields. If fieldsPerRecord is 0, Read sets it to
- * the number of fields in the first record, so that future records must
- * have the same field count. If fieldsPerRecord is negative, no check is
- * made and records may have a variable number of fields.
- * @property {boolean|undefined} lazyQuotes - If LazyQuotes is true,
- * a quote may appear in an unquoted field and a
- * non-doubled quote may appear in a quoted field.
- * @property {boolean|undefined} trimLeadingSpace - If TrimLeadingSpace is true,
- * leading white space in a field is ignored.
- * This is done even if the field delimiter, Comma, is white space.
+ * Reader configurations at the time of creation.
+ * @typedef {Object} readerConfig
  */
-export type ReaderConfig = {
+export type readerConfig = {
+  /**
+   * The field delimiter. Default to comma character (',').
+   * Comma must be a valid rune and must not be \r, \n,
+   * or the Unicode replacement character (0xFFFD).
+   */
   comma?: string
+  /**
+   * Comment, if defined, is the comment character.
+   * Lines beginning with the comment character without preceding whitespace are ignored.
+   * With leading whitespace the comment character becomes part of the
+   * field, even if {@link trimLeadingSpace} is true.
+   * Comment must be a valid rune and must not be \r, \n,
+   * or the Unicode replacement character (0xFFFD).
+   * It must also not be equal to {@link comma}.
+   */
   comment?: string
+  /**
+   * The number of expected fields per record.
+   * If fieldsPerRecord is positive, Read requires each record to
+   * have the given number of fields. If fieldsPerRecord is 0, Read sets it to
+   * the number of fields in the first record, so that future records must
+   * have the same field count. If fieldsPerRecord is negative, no check is
+   * made and records may have a variable number of fields.
+   */
   fieldsPerRecord?: number
+  /**
+   * If lazyQuotes is true,
+   * a quote may appear in an unquoted field and a
+   * non-doubled quote may appear in a quoted field.
+   */
   lazyQuotes?: boolean
+  /**
+   * If trimLeadingSpace is true,
+   * leading white space in a field is ignored.
+   * This is done even if the field delimiter, Comma, is white space.
+   */
   trimLeadingSpace?: boolean
 }
 
-export class ReaderError extends Error {
-  constructor(message: string) {
-    super(`csv.Reader: ${message}`)
-  }
-}
+/**
+ * Called once for each record. If this callback returns `true`
+ * then abort reading prematurely.
+ * @param {string[]} record - Array of fields in this record.
+ * @returns {boolean|void} true to abort iteration.
+ */
+export type recordCallback = (record: string[]) => boolean | void
 
 export const errInvalidDelim = new ReaderError('invalid field or comment delimiter')
 
@@ -68,28 +78,31 @@ const lengthNL = (b?: string) => {
  * @class
  */
 export default class Reader {
-  comma = ','
-  comment = ''
-  commaLen = 0
-  lazyQuotes = false
-  trimLeadingSpace = false
-  r: SliceReader
-  numLine = 0
-  line = ''
-  fullLine = ''
-  lastRecord = []
-  parsingQuotedString = false
-  recLine = 0
-  rawBuffer = new Uint8Array()
-  recordBuffer: RecordBuffer
+  private comma = ','
+  private comment = ''
+  private commaLen = 0
+  private lazyQuotes = false
+  private trimLeadingSpace = false
+  private r: SliceReader
+  private numLine = 0
+  private line = ''
+  private fullLine = ''
+  private lastRecord = []
+  private parsingQuotedString = false
+  private recLine = 0
+  private rawBuffer = new Uint8Array()
+  private recordBuffer: RecordBuffer
 
   /**
    * Create a new instance of Reader.
    * @constructor
-   * @param {ReadableStream|string|Uint8Array} input - CSV text string, bytes array or readable stream of those types.
-   * @param {ReaderConfig|undefined} config - If present then override default settings.
+   * @param input - CSV text string, bytes array or readable stream of those types.
+   * @param config - If present then override default settings.
    */
-  constructor(input: ReadableStream | string | Uint8Array, config?: ReaderConfig) {
+  constructor(
+    input: ReadableStream<string> | ReadableStream<Uint8Array> | string | Uint8Array,
+    config?: readerConfig
+  ) {
     this.r = new SliceReader(input)
     this._setComma(',')
     let fieldsPerRecord = 0
@@ -332,19 +345,11 @@ export default class Reader {
   }
 
   /**
-   * Called once for each record. If this callback returns `true`
-   * then abort reading prematurely.
-   * @callback Reader~recordCallback
-   * @param {string[]} record - Array of fields in this record.
-   * @returns {boolean|undefined} Whether to abort reading.
-   */
-
-  /**
    * Read all the remaining records.
-   * @param {Reader~recordCallback} cb - The callback that will be called with each record.
+   * @param {recordCallback} cb - The callback that will be called with each record.
    * @returns {Promise} Resolve when there's no record left or if reading is aborted.
    */
-  async readAll(cb: (record: string[]) => boolean | void): Promise<void> {
+  async readAll(cb: recordCallback): Promise<void> {
     do {
       await this.r.fill()
       while (true) {
@@ -360,14 +365,24 @@ export default class Reader {
   /**
    * Read at most N records.
    * @param {int} n - Maximum number of records to read.
-   * @param {Reader~recordCallback} cb - The callback to be called with each record.
+   * @param {recordCallback} cb - The callback to be called with each record.
    * @returns {Promise} Resolve when there's no record left or the maximum number of records have been reached.
    */
-  async readN(n: number, cb: (record: string[]) => boolean | void): Promise<void> {
+  async readN(n: number, cb: recordCallback): Promise<void> {
     let i = n
-    return this.readAll((record: string[]) => {
-      if (cb(record)) return true
-      if (--i <= 0) return true
-    })
+    while (true) {
+      while (true) {
+        const record = this._readRecord()
+        if (record.length === 0) {
+          break
+        }
+        if (cb(record)) return
+        if (--i <= 0) return
+      }
+      if (this.r.eof) {
+        break
+      }
+      await this.r.fill()
+    }
   }
 }

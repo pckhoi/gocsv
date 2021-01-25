@@ -19,13 +19,13 @@ xxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,zzzzzzzzzzzzzzzzzzzzzz
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz,wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww,vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 `.repeat(3)
 
-benchmarkSuite('CSVjs', {
-  ['CSVJS.Reader']: async () => {
+benchmarkSuite('gocsv', {
+  ['gocsv.Reader']: async () => {
     const r = new Reader(benchmarkCSVData)
     await r.readAll(() => {})
   },
 
-  ['CSVJS.Reader#largeFields']: async () => {
+  ['gocsv.Reader#largeFields']: async () => {
     const r = new Reader(largeFieldsCSVData)
     await r.readAll(() => {})
   },
