@@ -56,3 +56,7 @@ reader
     console.log('finished reading')
   })
 ```
+
+## Docs
+
+[Exports](docs/modules.md)
