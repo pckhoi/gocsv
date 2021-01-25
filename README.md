@@ -1,3 +1,5 @@
+![Tests](https://github.com/pckhoi/gocsv/workflows/Tests/badge.svg)
+
 # GoCSV
 
 There's a lack of high performance and correct implementation of CSV reading/writing in JS ecosystem, thus this library was born. All tests from Go's csv package are ported over and used to validate the correctness of this library. Furthermore it was written to run in modern browsers and should feel fairly modern to use. Finally only csv Reader has been ported at this point.
