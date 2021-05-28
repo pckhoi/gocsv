@@ -7,21 +7,8 @@ on:
       - 'v*'
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '12.x'
-      - uses: c-hive/gha-npm-cache@v1
-      - run: npm install
-      - run: npm test
-
   tagged-release:
     name: 'Tagged Release'
-    needs: test
     runs-on: 'ubuntu-latest'
     steps:
       - uses: actions/checkout@v2
