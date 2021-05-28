@@ -1,6 +1,6 @@
 {
   "name": "gocsv",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Go's CSV package ported to JavaScript to run in browser",
   "keywords": [
     "csv",

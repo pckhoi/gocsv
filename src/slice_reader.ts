@@ -27,7 +27,7 @@ export default class SliceReader {
   }
 
   async fill(): Promise<void> {
-    if (!this.rd) return
+    if (!this.rd || this.rd.locked) return
 
     const reader = this.rd.getReader()
 
